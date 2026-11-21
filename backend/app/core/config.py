@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     log_level: str = "INFO"
 
+    # Service Topology: unified | control_plane | data_plane
+    service_mode: str = Field(default="unified", alias="VIEWSTORM_SERVICE_MODE")
+    control_plane_url: str = Field(default="http://127.0.0.1:8000", alias="VIEWSTORM_CONTROL_PLANE_URL")
+    data_plane_url: str = Field(default="http://127.0.0.1:8001", alias="VIEWSTORM_DATA_PLANE_URL")
+    dataplane_bind_host: str = Field(default="0.0.0.0", alias="VIEWSTORM_DATAPLANE_BIND_HOST")
+    dataplane_bind_port: int = Field(default=8001, alias="VIEWSTORM_DATAPLANE_BIND_PORT")
+
     # Authorized target environments
     allowed_target_environments: List[str] = Field(
         default_factory=lambda: ["local", "test", "staging-authorized"]

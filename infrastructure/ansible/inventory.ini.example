@@ -1,0 +1,27 @@
+# ViewStorm Distributed Deployment Inventory Example
+
+[control_plane]
+control01.viewstorm.internal ansible_host=10.10.1.20 ansible_user=ubuntu
+
+[data_plane]
+dataplane01.viewstorm.internal ansible_host=10.10.2.21 ansible_user=ubuntu
+dataplane02.viewstorm.internal ansible_host=10.10.2.22 ansible_user=ubuntu
+
+[database]
+db01.viewstorm.internal ansible_host=10.10.1.10 ansible_user=ubuntu
+
+[redis]
+redis01.viewstorm.internal ansible_host=10.10.1.11 ansible_user=ubuntu
+
+[workers]
+worker01.viewstorm.internal ansible_host=10.10.3.31 worker_id=worker-01 capacity=250
+worker02.viewstorm.internal ansible_host=10.10.3.32 worker_id=worker-02 capacity=250
+worker03.viewstorm.internal ansible_host=10.10.3.33 worker_id=worker-03 capacity=250
+worker04.viewstorm.internal ansible_host=10.10.3.34 worker_id=worker-04 capacity=250
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3
+viewstorm_repo=https://github.com/1sarthak7/VIEW_storm.git
+viewstorm_branch=main
+control_plane_url=http://10.10.1.20:8000
+data_plane_url=http://10.10.2.20:8001

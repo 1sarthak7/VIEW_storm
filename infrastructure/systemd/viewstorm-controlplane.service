@@ -1,0 +1,28 @@
+[Unit]
+Description=ViewStorm Control Plane (FastAPI Orchestration & Web Management)
+After=network.target redis.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=viewstorm
+Group=viewstorm
+WorkingDirectory=/opt/viewstorm/backend
+Environment="PATH=/opt/viewstorm/.venv/bin:/usr/local/bin:/usr/bin"
+EnvironmentFile=-/etc/default/viewstorm-controlplane
+Environment="VIEWSTORM_SERVICE_MODE=control_plane"
+ExecStart=/opt/viewstorm/.venv/bin/uvicorn app.controlplane_main:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --workers 4 \
+    --log-level info
+
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=viewstorm-controlplane
+
+[Install]
+WantedBy=multi-user.target

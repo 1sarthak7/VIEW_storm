@@ -1,0 +1,125 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: viewstorm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-viewstorm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-viewstorm_password}
+      POSTGRES_DB: ${POSTGRES_DB:-viewstorm}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-viewstorm} -d ${POSTGRES_DB:-viewstorm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - control_plane_net
+      - data_plane_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: viewstorm-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "4gb", "--maxmemory-policy", "volatile-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - control_plane_net
+      - data_plane_net
+
+  control-plane:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: viewstorm-control-plane
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+      - VIEWSTORM_SERVICE_MODE=control_plane
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-viewstorm}:${POSTGRES_PASSWORD:-viewstorm_password}@postgres:5432/${POSTGRES_DB:-viewstorm}
+      - VIEWSTORM_CONTROL_PLANE_URL=http://control-plane:8000
+      - VIEWSTORM_DATA_PLANE_URL=http://dataplane:8001
+      - VIEWSTORM_MASTER_BIND_HOST=0.0.0.0
+      - VIEWSTORM_MASTER_BIND_PORT=5557
+      - VIEWSTORM_MASTER_ADVERTISE_HOST=control-plane
+    ports:
+      - "8000:8000"
+      - "5557:5557"
+      - "5558:5558"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - control_plane_net
+      - worker_net
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: viewstorm-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - control-plane
+    networks:
+      - control_plane_net
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: viewstorm-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - control_plane_net
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+
+networks:
+  control_plane_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.1.0/24
+  data_plane_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.2.0/24
+  worker_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.3.0/24

@@ -23,17 +23,30 @@ class RunnerSettings(BaseSettings):
     artifacts_dir: Path = Field(
         default_factory=lambda: Path(__file__).resolve().parent.parent.parent.parent / "artifacts" / "runs"
     )
+    benchmarks_artifacts_dir: Path = Field(
+        default_factory=lambda: Path(__file__).resolve().parent.parent.parent.parent / "artifacts" / "benchmarks"
+    )
 
     # Security target allowlist
     target_local_url: str = Field(
         default="http://127.0.0.1:8000",
         alias="VIEWSTORM_TARGET_LOCAL_URL"
     )
+    dataplane_target_url: str = Field(
+        default="http://127.0.0.1:8001",
+        alias="VIEWSTORM_DATAPLANE_TARGET_URL"
+    )
     allowed_target_hosts: List[str] = Field(
         default_factory=lambda: [
             "http://127.0.0.1:8000",
             "http://localhost:8000",
             "http://[::1]:8000",
+            "http://backend:8000",
+            "http://127.0.0.1:8001",
+            "http://localhost:8001",
+            "http://[::1]:8001",
+            "http://dataplane:8001",
+            "http://dataplane:8000",
         ]
     )
 

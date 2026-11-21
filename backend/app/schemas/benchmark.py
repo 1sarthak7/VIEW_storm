@@ -26,12 +26,17 @@ class BenchmarkProfile(BaseModel):
     max_p95_latency_ms: float
     requires_explicit_approval: bool = False
     min_worker_nodes: int = 1
+    min_physical_nodes: Optional[int] = 1
+    min_worker_processes: Optional[int] = 1
+    ramp_duration_seconds: Optional[int] = None
+    steady_state_duration_seconds: Optional[int] = None
+    ramp_down_duration_seconds: Optional[int] = None
     stages: Optional[List[BenchmarkStage]] = None
 
 
 class PreflightCheckRequest(BaseModel):
     """Request to validate cluster readiness before launching a benchmark."""
-    profile_name: str = Field(..., pattern="^(smoke|baseline|small|medium|large|extended|high_capacity|extreme|target)$")
+    profile_name: str = Field(..., pattern="^(smoke|baseline|small|medium|large|extended|high_capacity|extreme|intermediate_150k|massive|target)$")
     execution_mode: Optional[str] = Field(None, pattern="^(local|distributed)$")
 
 
@@ -47,11 +52,16 @@ class PreflightCheckResponse(BaseModel):
     memory_ok: bool
     requires_explicit_approval: bool
     messages: List[str]
+    target_api_ok: Optional[bool] = True
+    dataplane_ok: Optional[bool] = True
+    artifact_storage_ok: Optional[bool] = True
+    zeromq_ok: Optional[bool] = True
+    active_worker_processes: Optional[int] = 0
 
 
 class BenchmarkRunRequest(BaseModel):
     """Execution request for a standardized benchmark."""
-    profile_name: str = Field(..., pattern="^(smoke|baseline|small|medium|large|extended|high_capacity|extreme|target)$")
+    profile_name: str = Field(..., pattern="^(smoke|baseline|small|medium|large|extended|high_capacity|extreme|intermediate_150k|massive|target)$")
     execution_mode: Optional[str] = Field(None, pattern="^(local|distributed)$")
     target_environment: str = Field("local")
     approval_confirmed: bool = Field(default=False, description="Explicit operator authorization for high/extreme profiles")

@@ -1,0 +1,28 @@
+[Unit]
+Description=ViewStorm Distributed Load Generator Worker Agent
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=viewstorm
+Group=viewstorm
+WorkingDirectory=/opt/viewstorm
+Environment="PATH=/opt/viewstorm/.venv/bin:/usr/local/bin:/usr/bin"
+EnvironmentFile=-/etc/default/viewstorm-worker
+ExecStart=/opt/viewstorm/.venv/bin/python -m viewstorm_agent.main \
+    --server-url ${VIEWSTORM_CONTROL_PLANE_URL:-http://10.10.1.20:8000} \
+    --name ${VIEWSTORM_WORKER_NAME:-systemd-worker} \
+    --capacity ${VIEWSTORM_WORKER_CAPACITY:-250} \
+    --locustfile /opt/viewstorm/simulator/locustfile.py
+
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+LimitNPROC=32768
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=viewstorm-worker
+
+[Install]
+WantedBy=multi-user.target

@@ -75,7 +75,15 @@ ViewStorm is an enterprise-grade distributed virtual-viewer simulation and perfo
    - **Automated Safety Aborts**: Instant termination on error rate spikes (>2.5x SLA or >12%) or low system memory (<300MB).
    - **Reproducibility & Comparison**: Full software, infrastructure, and workload metadata capture with `IMPROVEMENT`, `REGRESSION`, `STABLE`, or `INCOMPARABLE` delta verdicts.
 
-6. **React 19 Analytics & Benchmarking Dashboard**:
+6. **Production Deployment & Plane Decoupling (Milestone 8)**:
+   - **Control-Plane & Data-Plane Decoupling**: Complete architectural separation between orchestration (`app.controlplane_main`) and dedicated high-throughput event ingestion (`app.dataplane_main`), guaranteeing control-plane survivability under heavy traffic.
+   - **Multi-Machine Deployment Automation**: Docker Compose configurations for decomposed host groups, Linux systemd unit files, cloud-init templates, and automated Ansible playbooks.
+   - **Private Networking & ZeroMQ Security**: Strict network segmentation (`control_plane_net`, `data_plane_net`, `worker_net`), ZeroMQ ports 5557/5558 bound strictly to internal network, and WireGuard VPN mesh configuration.
+   - **Worker Fleet Operations**: Rigorous distinction between physical worker nodes and worker processes, proportional allocation based on 75% sustainable capacity rule.
+   - **Immutable Benchmark Artifacts**: Comprehensive directory structure (`artifacts/benchmarks/{benchmark_id}/`) storing JSON metadata, CSV metrics, system telemetry, and final reports.
+   - **Honest 200K Capacity Reporting**: Differentiates between physical testbed capacity (1,000 users, 68k Redis ops/sec) and theoretical cluster scaling (68 nodes, 536 processes for 200k target).
+
+7. **React 19 Analytics & Benchmarking Dashboard**:
    - Route-based code splitting with `React.lazy` and manual vendor chunking, achieving a **75% reduction** in initial bundle size.
    - Interactive Benchmarks dashboard (`/benchmarks`) with profile selection, real-time preflight checklist, authorization acknowledgment, live telemetry, and regression comparison modal.
    - Interactive charts for Throughput, Latency Distributions (p50/p95/p99), Virtual User Ramps, and Event Breakdowns.
@@ -122,7 +130,7 @@ python -m worker_agent.main --coordinator-url http://localhost:8000 --capacity 5
 
 ## Automated Verification
 
-### Backend Test Suite (71 Tests)
+### Backend Test Suite (77 Tests)
 ```bash
 cd backend
 pytest tests -v
@@ -139,6 +147,14 @@ npm run build
 ---
 
 ## Documentation Index
+- [Milestone 8 Deployment Architecture](docs/MILESTONE_8_DEPLOYMENT_ARCHITECTURE.md)
+- [Production Networking & Security](docs/PRODUCTION_NETWORKING.md)
+- [Control Plane & Data Plane Separation](docs/CONTROL_PLANE_DATA_PLANE.md)
+- [Multi-Machine Deployment Guide](docs/MULTI_MACHINE_DEPLOYMENT.md)
+- [Worker Fleet Operations](docs/WORKER_FLEET_OPERATIONS.md)
+- [End-to-End Capacity Validation](docs/END_TO_END_CAPACITY_VALIDATION.md)
+- [200K Benchmark Results](docs/200K_BENCHMARK_RESULTS.md)
+- [Infrastructure Cost Report](docs/INFRASTRUCTURE_COST_REPORT.md)
 - [Milestone 7 Architecture](docs/MILESTONE_7_ARCHITECTURE.md)
 - [Worker Capacity Calibration](docs/WORKER_CAPACITY_CALIBRATION.md)
 - [Master Capacity Analysis](docs/MASTER_CAPACITY_ANALYSIS.md)

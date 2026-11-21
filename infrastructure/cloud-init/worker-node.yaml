@@ -1,0 +1,49 @@
+#cloud-config
+# ViewStorm Distributed Worker Node Automated Bootstrapping Template
+package_update: true
+package_upgrade: true
+
+packages:
+  - python3.11
+  - python3.11-venv
+  - python3-pip
+  - git
+  - curl
+  - wireguard
+  - net-tools
+  - htop
+
+users:
+  - name: viewstorm
+    gecos: ViewStorm Worker Daemon User
+    groups: users,adm
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+
+write_files:
+  - path: /etc/security/limits.d/viewstorm.conf
+    content: |
+      viewstorm soft nofile 65535
+      viewstorm hard nofile 65535
+      viewstorm soft nproc 32768
+      viewstorm hard nproc 32768
+
+  - path: /etc/sysctl.d/99-viewstorm.conf
+    content: |
+      net.core.somaxconn = 65535
+      net.ipv4.tcp_max_syn_backlog = 8192
+      net.ipv4.ip_local_port_range = 1024 65535
+      net.ipv4.tcp_tw_reuse = 1
+      fs.file-max = 2097152
+
+runcmd:
+  - sysctl --system
+  - mkdir -p /opt/viewstorm
+  - git clone https://github.com/1sarthak7/VIEW_storm.git /opt/viewstorm
+  - chown -R viewstorm:viewstorm /opt/viewstorm
+  - su - viewstorm -c "python3.11 -m venv /opt/viewstorm/.venv"
+  - su - viewstorm -c "/opt/viewstorm/.venv/bin/pip install --upgrade pip"
+  - su - viewstorm -c "/opt/viewstorm/.venv/bin/pip install -r /opt/viewstorm/worker-agent/requirements.txt"
+  - cp /opt/viewstorm/infrastructure/systemd/viewstorm-worker-agent.service /etc/systemd/system/
+  - systemctl daemon-reload
+  - systemctl enable --now viewstorm-worker-agent.service

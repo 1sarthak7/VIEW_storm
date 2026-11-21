@@ -1,0 +1,57 @@
+---
+- name: Deploy ViewStorm Data Plane Ingestion Hosts
+  hosts: data_plane
+  become: true
+  tasks:
+    - name: Install system dependencies
+      apt:
+        name:
+          - python3.11
+          - python3.11-venv
+          - python3-pip
+          - git
+        state: present
+        update_cache: true
+
+    - name: Create viewstorm user
+      user:
+        name: viewstorm
+        system: true
+        shell: /bin/bash
+
+    - name: Clone repository
+      git:
+        repo: "{{ viewstorm_repo }}"
+        dest: /opt/viewstorm
+        version: "{{ viewstorm_branch }}"
+        force: true
+
+    - name: Set permissions
+      file:
+        path: /opt/viewstorm
+        owner: viewstorm
+        group: viewstorm
+        recurse: true
+
+    - name: Setup virtualenv
+      command: python3.11 -m venv /opt/viewstorm/.venv
+      args:
+        creates: /opt/viewstorm/.venv/bin/python
+
+    - name: Install backend requirements
+      pip:
+        requirements: /opt/viewstorm/backend/requirements.txt
+        virtualenv: /opt/viewstorm/.venv
+
+    - name: Deploy data plane systemd service
+      copy:
+        src: ../systemd/viewstorm-dataplane.service
+        dest: /etc/systemd/system/viewstorm-dataplane.service
+        mode: "0644"
+
+    - name: Reload and start data plane
+      systemd:
+        name: viewstorm-dataplane
+        state: restarted
+        enabled: true
+        daemon_reload: true

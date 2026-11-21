@@ -3,11 +3,15 @@
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.endpoints.health import get_health
-from app.api.v1.router import api_v1_router
+from app.api.v1.router import (
+    api_v1_router,
+    control_plane_router,
+    data_plane_router,
+)
 from app.core.config import settings
 from app.core.errors import ViewStormException, viewstorm_exception_handler
 from app.core.logging import logger, setup_logging
@@ -30,32 +34,36 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application startup and graceful shutdown lifecycle management."""
     setup_logging(level=settings.log_level)
     logger.info(
-        "Initializing %s v%s in '%s' environment",
+        "Initializing %s v%s in '%s' environment (mode: %s)",
         settings.project_name,
         settings.version,
         settings.environment,
+        settings.service_mode,
     )
 
-    # Startup reconciliation and admin bootstrap
-    try:
-        async with AsyncSessionLocal() as session:
-            await auth_service.bootstrap_admin(session)
-            await lifecycle_reconciliation_service.reconcile_interrupted_runs(session)
-    except Exception as e:
-        logger.warning("Startup reconciliation or bootstrap deferred: %s", e)
+    # Startup reconciliation and admin bootstrap (Control Plane / Unified only)
+    if settings.service_mode != "data_plane":
+        try:
+            async with AsyncSessionLocal() as session:
+                await auth_service.bootstrap_admin(session)
+                await lifecycle_reconciliation_service.reconcile_interrupted_runs(session)
+        except Exception as e:
+            logger.warning("Startup reconciliation or bootstrap deferred: %s", e)
 
     yield
 
     logger.info("Closing database engine and Redis connection pool...")
     await engine.dispose()
     await redis_pool.disconnect()
-    logger.info("Shutdown complete for %s", settings.project_name)
+    logger.info("Shutdown complete for %s (%s)", settings.project_name, settings.service_mode)
 
 
-def create_application() -> FastAPI:
-    """Factory function to build and configure the FastAPI app."""
+def create_application(service_mode: Optional[str] = None) -> FastAPI:
+    """Factory function to build and configure the FastAPI app for unified, control_plane, or data_plane mode."""
+    mode = service_mode or settings.service_mode
+    title_suffix = f" [{mode.replace('_', ' ').title()}]" if mode != "unified" else ""
     app = FastAPI(
-        title=settings.project_name,
+        title=f"{settings.project_name}{title_suffix}",
         version=settings.version,
         description=(
             "Distributed virtual-viewer simulation and performance engineering platform. "
@@ -125,8 +133,13 @@ def create_application() -> FastAPI:
         """Prometheus metrics endpoint for cluster scraping."""
         return Response(content=get_metrics_payload(), media_type=CONTENT_TYPE_LATEST)
 
-    # API v1 routes
-    app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
+    # API v1 routes depending on Service Mode
+    if mode == "data_plane":
+        app.include_router(data_plane_router, prefix=settings.api_v1_prefix)
+    elif mode == "control_plane":
+        app.include_router(control_plane_router, prefix=settings.api_v1_prefix)
+    else:
+        app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
 
     return app
 

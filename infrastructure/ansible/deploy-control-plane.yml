@@ -1,0 +1,59 @@
+---
+- name: Deploy ViewStorm Control Plane Host
+  hosts: control_plane
+  become: true
+  tasks:
+    - name: Install system dependencies
+      apt:
+        name:
+          - python3.11
+          - python3.11-venv
+          - python3-pip
+          - git
+          - nginx
+          - wireguard
+        state: present
+        update_cache: true
+
+    - name: Create viewstorm service user
+      user:
+        name: viewstorm
+        system: true
+        shell: /bin/bash
+
+    - name: Clone ViewStorm repository
+      git:
+        repo: "{{ viewstorm_repo }}"
+        dest: /opt/viewstorm
+        version: "{{ viewstorm_branch }}"
+        force: true
+
+    - name: Set permissions
+      file:
+        path: /opt/viewstorm
+        owner: viewstorm
+        group: viewstorm
+        recurse: true
+
+    - name: Setup Python virtualenv
+      command: python3.11 -m venv /opt/viewstorm/.venv
+      args:
+        creates: /opt/viewstorm/.venv/bin/python
+
+    - name: Install backend requirements
+      pip:
+        requirements: /opt/viewstorm/backend/requirements.txt
+        virtualenv: /opt/viewstorm/.venv
+
+    - name: Deploy systemd service
+      copy:
+        src: ../systemd/viewstorm-controlplane.service
+        dest: /etc/systemd/system/viewstorm-controlplane.service
+        mode: "0644"
+
+    - name: Reload systemd and enable control-plane
+      systemd:
+        name: viewstorm-controlplane
+        state: restarted
+        enabled: true
+        daemon_reload: true

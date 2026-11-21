@@ -42,6 +42,11 @@ export interface BenchmarkProfile {
   max_p95_latency_ms: number;
   requires_explicit_approval?: boolean;
   min_worker_nodes?: number;
+  min_physical_nodes?: number;
+  min_worker_processes?: number;
+  ramp_duration_seconds?: number;
+  steady_state_duration_seconds?: number;
+  ramp_down_duration_seconds?: number;
   stages?: BenchmarkStage[];
 }
 
@@ -56,6 +61,11 @@ export interface PreflightCheckResponse {
   memory_ok: boolean;
   requires_explicit_approval: boolean;
   messages: string[];
+  target_api_ok?: boolean;
+  dataplane_ok?: boolean;
+  artifact_storage_ok?: boolean;
+  zeromq_ok?: boolean;
+  active_worker_processes?: number;
 }
 
 export interface ThresholdEvaluation {

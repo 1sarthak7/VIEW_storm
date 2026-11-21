@@ -1,0 +1,224 @@
+version: "3.8"
+
+services:
+  # -------------------------------------------------------------------------
+  # Persistent Storage Subsystems
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: viewstorm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-viewstorm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-viewstorm_password}
+      POSTGRES_DB: ${POSTGRES_DB:-viewstorm}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-viewstorm} -d ${POSTGRES_DB:-viewstorm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      control_plane_net:
+        ipv4_address: 10.10.1.10
+      data_plane_net:
+        ipv4_address: 10.10.2.10
+
+  redis:
+    image: redis:7-alpine
+    container_name: viewstorm-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "4gb", "--maxmemory-policy", "volatile-lru"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      control_plane_net:
+        ipv4_address: 10.10.1.11
+      data_plane_net:
+        ipv4_address: 10.10.2.11
+
+  # -------------------------------------------------------------------------
+  # Control Plane (FastAPI Orchestrator, Locust Master, UI)
+  # -------------------------------------------------------------------------
+  control-plane:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: viewstorm-control-plane
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+      - VIEWSTORM_SERVICE_MODE=control_plane
+      - REDIS_URL=redis://10.10.1.11:6379/0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-viewstorm}:${POSTGRES_PASSWORD:-viewstorm_password}@10.10.1.10:5432/${POSTGRES_DB:-viewstorm}
+      - VIEWSTORM_CONTROL_PLANE_URL=http://control-plane:8000
+      - VIEWSTORM_DATA_PLANE_URL=http://dataplane-lb:8001
+      - VIEWSTORM_MASTER_BIND_HOST=0.0.0.0
+      - VIEWSTORM_MASTER_BIND_PORT=5557
+      - VIEWSTORM_MASTER_ADVERTISE_HOST=control-plane
+    ports:
+      - "8000:8000"
+      - "5557:5557"
+      - "5558:5558"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      control_plane_net:
+        ipv4_address: 10.10.1.20
+      worker_net:
+        ipv4_address: 10.10.3.20
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: viewstorm-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - control-plane
+    networks:
+      control_plane_net:
+        ipv4_address: 10.10.1.30
+
+  # -------------------------------------------------------------------------
+  # Data Plane (Dedicated High-Throughput Event Ingestion Farm & LB)
+  # -------------------------------------------------------------------------
+  dataplane-1:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: viewstorm-dataplane-1
+    restart: unless-stopped
+    command: ["uvicorn", "app.dataplane_main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "4"]
+    environment:
+      - APP_ENV=production
+      - VIEWSTORM_SERVICE_MODE=data_plane
+      - REDIS_URL=redis://10.10.2.11:6379/0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-viewstorm}:${POSTGRES_PASSWORD:-viewstorm_password}@10.10.2.10:5432/${POSTGRES_DB:-viewstorm}
+      - VIEWSTORM_TARGET_LOCAL_URL=http://dataplane-lb:8001
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4096M
+    networks:
+      data_plane_net:
+        ipv4_address: 10.10.2.21
+
+  dataplane-2:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: viewstorm-dataplane-2
+    restart: unless-stopped
+    command: ["uvicorn", "app.dataplane_main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "4"]
+    environment:
+      - APP_ENV=production
+      - VIEWSTORM_SERVICE_MODE=data_plane
+      - REDIS_URL=redis://10.10.2.11:6379/0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-viewstorm}:${POSTGRES_PASSWORD:-viewstorm_password}@10.10.2.10:5432/${POSTGRES_DB:-viewstorm}
+      - VIEWSTORM_TARGET_LOCAL_URL=http://dataplane-lb:8001
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4096M
+    networks:
+      data_plane_net:
+        ipv4_address: 10.10.2.22
+
+  dataplane-lb:
+    image: nginx:1.25-alpine
+    container_name: viewstorm-dataplane-lb
+    restart: unless-stopped
+    volumes:
+      - ./nginx/dataplane-lb.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8001:8001"
+    depends_on:
+      - dataplane-1
+      - dataplane-2
+    networks:
+      data_plane_net:
+        ipv4_address: 10.10.2.20
+      worker_net:
+        ipv4_address: 10.10.3.21
+
+  # -------------------------------------------------------------------------
+  # Worker Fleet Subprocesses
+  # -------------------------------------------------------------------------
+  worker-agent-1:
+    build:
+      context: ..
+      dockerfile: worker-agent/Dockerfile
+    container_name: viewstorm-worker-1
+    restart: unless-stopped
+    command: [
+      "--server-url", "http://10.10.3.20:8000",
+      "--name", "docker-worker-01",
+      "--capacity", "250",
+      "--locustfile", "simulator/locustfile.py"
+    ]
+    depends_on:
+      - control-plane
+      - dataplane-lb
+    networks:
+      worker_net:
+        ipv4_address: 10.10.3.31
+
+  worker-agent-2:
+    build:
+      context: ..
+      dockerfile: worker-agent/Dockerfile
+    container_name: viewstorm-worker-2
+    restart: unless-stopped
+    command: [
+      "--server-url", "http://10.10.3.20:8000",
+      "--name", "docker-worker-02",
+      "--capacity", "250",
+      "--locustfile", "simulator/locustfile.py"
+    ]
+    depends_on:
+      - control-plane
+      - dataplane-lb
+    networks:
+      worker_net:
+        ipv4_address: 10.10.3.32
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  control_plane_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.1.0/24
+  data_plane_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.2.0/24
+  worker_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.3.0/24

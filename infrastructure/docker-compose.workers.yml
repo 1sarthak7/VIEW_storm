@@ -1,0 +1,98 @@
+version: "3.8"
+
+services:
+  worker-01:
+    build:
+      context: ..
+      dockerfile: worker-agent/Dockerfile
+    container_name: viewstorm-worker-fleet-01
+    restart: unless-stopped
+    command: [
+      "--server-url", "http://control-plane:8000",
+      "--name", "prod-worker-01",
+      "--capacity", "250",
+      "--locustfile", "simulator/locustfile.py"
+    ]
+    environment:
+      - VIEWSTORM_WORKER_IDENTIFIER=worker-prod-node-01
+      - VIEWSTORM_WORKER_AUTH_TOKEN=viewstorm-secret-token
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
+    networks:
+      - worker_net
+
+  worker-02:
+    build:
+      context: ..
+      dockerfile: worker-agent/Dockerfile
+    container_name: viewstorm-worker-fleet-02
+    restart: unless-stopped
+    command: [
+      "--server-url", "http://control-plane:8000",
+      "--name", "prod-worker-02",
+      "--capacity", "250",
+      "--locustfile", "simulator/locustfile.py"
+    ]
+    environment:
+      - VIEWSTORM_WORKER_IDENTIFIER=worker-prod-node-02
+      - VIEWSTORM_WORKER_AUTH_TOKEN=viewstorm-secret-token
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
+    networks:
+      - worker_net
+
+  worker-03:
+    build:
+      context: ..
+      dockerfile: worker-agent/Dockerfile
+    container_name: viewstorm-worker-fleet-03
+    restart: unless-stopped
+    command: [
+      "--server-url", "http://control-plane:8000",
+      "--name", "prod-worker-03",
+      "--capacity", "250",
+      "--locustfile", "simulator/locustfile.py"
+    ]
+    environment:
+      - VIEWSTORM_WORKER_IDENTIFIER=worker-prod-node-03
+      - VIEWSTORM_WORKER_AUTH_TOKEN=viewstorm-secret-token
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
+    networks:
+      - worker_net
+
+  worker-04:
+    build:
+      context: ..
+      dockerfile: worker-agent/Dockerfile
+    container_name: viewstorm-worker-fleet-04
+    restart: unless-stopped
+    command: [
+      "--server-url", "http://control-plane:8000",
+      "--name", "prod-worker-04",
+      "--capacity", "250",
+      "--locustfile", "simulator/locustfile.py"
+    ]
+    environment:
+      - VIEWSTORM_WORKER_IDENTIFIER=worker-prod-node-04
+      - VIEWSTORM_WORKER_AUTH_TOKEN=viewstorm-secret-token
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
+    networks:
+      - worker_net
+
+networks:
+  worker_net:
+    external: true

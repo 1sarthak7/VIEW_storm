@@ -77,6 +77,27 @@ async def get_benchmark_result(
     return result
 
 
+@router.get("/results/{benchmark_id}/artifacts")
+async def get_benchmark_artifacts(
+    benchmark_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_viewer),
+):
+    """Retrieve list of generated immutable artifact files for a completed benchmark."""
+    from app.core.runner_config import runner_settings
+    artifact_dir = runner_settings.benchmarks_artifacts_dir / benchmark_id
+    if not artifact_dir.exists():
+        return {"benchmark_id": benchmark_id, "artifacts_available": False, "files": []}
+
+    files = [str(p.relative_to(artifact_dir)) for p in artifact_dir.rglob("*") if p.is_file()]
+    return {
+        "benchmark_id": benchmark_id,
+        "artifacts_available": True,
+        "artifact_directory": str(artifact_dir),
+        "files": sorted(files),
+    }
+
+
 @router.get("/compare", response_model=BenchmarkComparisonResponse)
 async def compare_benchmarks(
     baseline_id: str = Query(..., description="ID of baseline benchmark run"),

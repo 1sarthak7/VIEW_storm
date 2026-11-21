@@ -1,0 +1,65 @@
+---
+- name: Deploy ViewStorm Worker Fleet Nodes
+  hosts: workers
+  become: true
+  tasks:
+    - name: Install system dependencies
+      apt:
+        name:
+          - python3.11
+          - python3.11-venv
+          - python3-pip
+          - git
+          - wireguard
+        state: present
+        update_cache: true
+
+    - name: Create viewstorm user
+      user:
+        name: viewstorm
+        system: true
+        shell: /bin/bash
+
+    - name: Clone ViewStorm repository
+      git:
+        repo: "{{ viewstorm_repo }}"
+        dest: /opt/viewstorm
+        version: "{{ viewstorm_branch }}"
+        force: true
+
+    - name: Set permissions
+      file:
+        path: /opt/viewstorm
+        owner: viewstorm
+        group: viewstorm
+        recurse: true
+
+    - name: Setup virtualenv
+      command: python3.11 -m venv /opt/viewstorm/.venv
+      args:
+        creates: /opt/viewstorm/.venv/bin/python
+
+    - name: Install worker agent dependencies
+      pip:
+        requirements: /opt/viewstorm/worker-agent/requirements.txt
+        virtualenv: /opt/viewstorm/.venv
+
+    - name: Configure worker environment variables
+      template:
+        src: templates/viewstorm-worker.j2
+        dest: /etc/default/viewstorm-worker
+        mode: "0600"
+        owner: viewstorm
+
+    - name: Deploy worker systemd service
+      copy:
+        src: ../systemd/viewstorm-worker-agent.service
+        dest: /etc/systemd/system/viewstorm-worker-agent.service
+        mode: "0644"
+
+    - name: Enable and start worker agent
+      systemd:
+        name: viewstorm-worker-agent
+        state: restarted
+        enabled: true
+        daemon_reload: true
