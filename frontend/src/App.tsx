@@ -18,6 +18,9 @@ const SimulationDetailPage = React.lazy(() =>
 const WorkerNodesPage = React.lazy(() =>
   import('./pages/WorkerNodesPage').then((m) => ({ default: m.WorkerNodesPage }))
 );
+const BenchmarksPage = React.lazy(() =>
+  import('./pages/BenchmarksPage').then((m) => ({ default: m.BenchmarksPage }))
+);
 const AnalyticsPage = React.lazy(() =>
   import('./pages/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage }))
 );
@@ -77,6 +80,14 @@ export const App: React.FC = () => {
                 element={
                   <Suspense fallback={<PageSkeleton />}>
                     <WorkerNodesPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="benchmarks"
+                element={
+                  <Suspense fallback={<PageSkeleton />}>
+                    <BenchmarksPage />
                   </Suspense>
                 }
               />

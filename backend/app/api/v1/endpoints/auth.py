@@ -9,6 +9,8 @@ from app.database.session import get_db
 from app.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.auth import (
+    BootstrapAdminRequest,
+    BootstrapStatusResponse,
     TokenResponse,
     UserCreateRequest,
     UserLoginRequest,
@@ -18,6 +20,23 @@ from app.schemas.auth import (
 from app.services.auth_service import auth_service
 
 router = APIRouter(prefix="/auth", tags=["Authentication & RBAC"])
+
+
+@router.get("/bootstrap/status", response_model=BootstrapStatusResponse)
+async def get_bootstrap_status(
+    db: AsyncSession = Depends(get_db),
+) -> BootstrapStatusResponse:
+    """Check whether the system requires initial administrator bootstrapping."""
+    return await auth_service.check_bootstrap_status(db=db)
+
+
+@router.post("/bootstrap", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def execute_bootstrap(
+    payload: BootstrapAdminRequest,
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
+    """Consume one-time bootstrap token to initialize root system administrator."""
+    return await auth_service.execute_bootstrap(payload, db=db)
 
 
 @router.post("/login", response_model=TokenResponse)

@@ -12,3 +12,5 @@ build/
 *.log
 .DS_Store
 artifacts/
+*.token
+.viewstorm_bootstrap.token

@@ -1,5 +1,8 @@
 """Authentication and Operator RBAC Service."""
 
+import os
+import secrets
+from pathlib import Path
 from typing import Optional
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +23,8 @@ from app.database.redis import redis_client
 from app.models.user import User, UserRole
 from app.repositories.user_repository import user_repository
 from app.schemas.auth import (
+    BootstrapAdminRequest,
+    BootstrapStatusResponse,
     TokenResponse,
     UserCreateRequest,
     UserLoginRequest,
@@ -127,22 +132,111 @@ class AuthService:
         logger.info("Created new user '%s' with role '%s'", saved.username, saved.role)
         return UserResponse.model_validate(saved)
 
-    async def bootstrap_admin(self, db: AsyncSession) -> None:
-        """Ensure initial administrative account exists on system startup."""
+    async def check_bootstrap_status(self, db: AsyncSession) -> BootstrapStatusResponse:
+        """Query whether initial system administrator bootstrap is pending."""
         count = await user_repository.count_users(db)
         if count == 0:
-            admin_user = User(
-                username=settings.admin_username,
-                email=settings.admin_email,
-                hashed_password=get_password_hash(settings.admin_password),
-                role=UserRole.ADMIN.value,
-                is_active=True,
+            return BootstrapStatusResponse(
+                bootstrap_required=True,
+                message="No operators detected. Initial administrative bootstrap required.",
             )
-            await user_repository.create_user(db, admin_user)
-            logger.info(
-                "Initial admin user '%s' bootstrapped successfully.",
-                settings.admin_username,
+        return BootstrapStatusResponse(
+            bootstrap_required=False,
+            message="System is already provisioned with administrative operator.",
+        )
+
+    async def execute_bootstrap(
+        self,
+        payload: BootstrapAdminRequest,
+        db: AsyncSession,
+    ) -> UserResponse:
+        """Execute one-time administrative bootstrap with verified single-use token."""
+        count = await user_repository.count_users(db)
+        if count > 0:
+            raise AuthenticationError(
+                "System has already been provisioned. One-time bootstrap is permanently disabled."
             )
+
+        # Retrieve valid bootstrap token
+        expected_token = settings.bootstrap_token
+        redis_key = "viewstorm:auth:bootstrap_token"
+        if not expected_token:
+            raw = await self._redis.get(redis_key)
+            if raw:
+                expected_token = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+
+        if not expected_token:
+            token_file = Path(settings.bootstrap_token_file)
+            if token_file.exists():
+                try:
+                    expected_token = token_file.read_text().strip()
+                except Exception:
+                    pass
+
+        if not expected_token or not secrets.compare_digest(payload.bootstrap_token.strip(), expected_token.strip()):
+            logger.warning("Failed administrative bootstrap attempt: invalid or mismatched token.")
+            raise AuthenticationError("Invalid or expired bootstrap token.")
+
+        # Provision new root administrator
+        admin_user = User(
+            username=payload.username.strip(),
+            email=payload.email.strip().lower(),
+            hashed_password=get_password_hash(payload.password),
+            role=UserRole.ADMIN.value,
+            is_active=True,
+        )
+        saved = await user_repository.create_user(db, admin_user)
+        logger.info("Root administrator '%s' successfully bootstrapped.", saved.username)
+
+        # Invalidate and purge the bootstrap token permanently
+        try:
+            await self._redis.delete(redis_key)
+            token_file = Path(settings.bootstrap_token_file)
+            if token_file.exists():
+                token_file.unlink()
+            logger.info("One-time bootstrap secret successfully destroyed.")
+        except Exception as e:
+            logger.warning("Error cleaning up bootstrap token file: %s", e)
+
+        return UserResponse.model_validate(saved)
+
+    async def bootstrap_admin(self, db: AsyncSession) -> None:
+        """Securely initialize bootstrap token or configure admin from explicit env vars."""
+        count = await user_repository.count_users(db)
+        if count == 0:
+            if settings.admin_password:
+                # Explicit password supplied via environment (e.g. secure CI/CD)
+                admin_user = User(
+                    username=settings.admin_username,
+                    email=settings.admin_email,
+                    hashed_password=get_password_hash(settings.admin_password),
+                    role=UserRole.ADMIN.value,
+                    is_active=True,
+                )
+                await user_repository.create_user(db, admin_user)
+                logger.info(
+                    "Admin user '%s' initialized via explicit environment variable.",
+                    settings.admin_username,
+                )
+            else:
+                # Generate unique, high-entropy one-time bootstrap secret
+                token = settings.bootstrap_token or secrets.token_urlsafe(32)
+                redis_key = "viewstorm:auth:bootstrap_token"
+                await self._redis.set(redis_key, token, ex=86400)
+
+                # Persist to local restricted file
+                try:
+                    token_file = Path(settings.bootstrap_token_file)
+                    token_file.write_text(token)
+                    os.chmod(settings.bootstrap_token_file, 0o600)
+                    logger.warning(
+                        "SECURITY PRECONDITION: No administrator exists. "
+                        "One-time bootstrap token generated and written to '%s'. "
+                        "Complete bootstrap via POST /api/v1/auth/bootstrap.",
+                        settings.bootstrap_token_file,
+                    )
+                except Exception as e:
+                    logger.warning("Could not write bootstrap token file: %s", e)
 
 
 auth_service = AuthService()

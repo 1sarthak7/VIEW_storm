@@ -14,6 +14,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('ViewStorm')).toBeInTheDocument();
     expect(screen.getByText('Overview')).toBeInTheDocument();
     expect(screen.getByText('Simulations')).toBeInTheDocument();
+    expect(screen.getByText('Benchmarks')).toBeInTheDocument();
     expect(screen.getByText('Worker Nodes')).toBeInTheDocument();
     expect(screen.getByText('Analytics')).toBeInTheDocument();
     expect(screen.getByText('Reports')).toBeInTheDocument();

@@ -31,7 +31,7 @@ async def clean_storage_state():
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text(
-                    "TRUNCATE TABLE benchmark_results, users, simulation_workers, simulation_metrics, event_summaries, simulation_runs CASCADE;"
+                    "TRUNCATE TABLE load_generator_nodes, worker_calibrations, benchmark_results, users, simulation_workers, simulation_metrics, event_summaries, simulation_runs CASCADE;"
                 )
             )
             await session.commit()

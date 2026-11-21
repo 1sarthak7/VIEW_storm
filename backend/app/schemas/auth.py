@@ -49,3 +49,17 @@ class PasswordChangeRequest(BaseModel):
     """Password update request."""
     current_password: str
     new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class BootstrapAdminRequest(BaseModel):
+    """One-time cryptographic initialization payload to provision root administrator."""
+    bootstrap_token: str = Field(..., min_length=16, description="One-time secret token required for initial setup")
+    username: str = Field(..., min_length=3, max_length=64)
+    email: EmailStr
+    password: str = Field(..., min_length=10, max_length=128)
+
+
+class BootstrapStatusResponse(BaseModel):
+    """Indicates whether initial system operator bootstrap is pending."""
+    bootstrap_required: bool
+    message: str

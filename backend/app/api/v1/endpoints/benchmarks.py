@@ -12,6 +12,8 @@ from app.schemas.benchmark import (
     BenchmarkProfile,
     BenchmarkResultResponse,
     BenchmarkRunRequest,
+    PreflightCheckRequest,
+    PreflightCheckResponse,
 )
 from app.services.benchmark_service import benchmark_service
 
@@ -22,8 +24,22 @@ router = APIRouter(prefix="/benchmarks", tags=["Benchmarking Framework"])
 async def list_benchmark_profiles(
     _: User = Depends(require_viewer),
 ) -> List[BenchmarkProfile]:
-    """Retrieve predefined standardized benchmark profiles (Smoke, Baseline, Medium, High, Distributed)."""
+    """Retrieve predefined standardized benchmark profiles (Smoke, Baseline, Small, Medium, Large, Extended, High, Extreme, Target)."""
     return benchmark_service.get_profiles()
+
+
+@router.post("/preflight", response_model=PreflightCheckResponse)
+async def check_benchmark_preflight(
+    payload: PreflightCheckRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_viewer),
+) -> PreflightCheckResponse:
+    """Validate cluster readiness, storage health, and worker capacity before executing a benchmark."""
+    return await benchmark_service.preflight_check(
+        profile_name=payload.profile_name,
+        execution_mode=payload.execution_mode,
+        db=db,
+    )
 
 
 @router.post("/run", response_model=BenchmarkResultResponse, status_code=status.HTTP_201_CREATED)

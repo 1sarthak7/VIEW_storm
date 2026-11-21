@@ -67,13 +67,17 @@ ViewStorm is an enterprise-grade distributed virtual-viewer simulation and perfo
    - **Startup Lifecycle Reconciliation**: Automatically detects and transitions orphan/zombie runs to `INTERRUPTED`.
    - **Global Emergency Stop**: Instant distributed kill-switch terminating all local and remote generators in milliseconds.
 
-5. **Standardized Benchmarking Framework**:
-   - Predefined profiles: `smoke`, `baseline`, `medium`, `high`, `distributed`.
-   - Continuous SLA threshold monitoring with automated safety aborts for runaway error rates or latency degradation.
-   - Automated regression analysis computing $\Delta RPS\%$, $\Delta p95\%$, and performance verdicts (`IMPROVEMENT`, `REGRESSION`, `STABLE`).
+5. **Large-Scale Distributed Capacity Validation (Milestone 7)**:
+   - **Worker Capacity Calibration**: Stepped ramp calibration testing (10 to 500+ users), saturation detection (CPU >85%, RAM <15%, error >2%, p95 >1500ms), and 75% sustainable capacity enforcement.
+   - **9 Standardized Profiles**: Smoke (10), Baseline (100), Small (1,000), Medium (5,000), Large (10,000), Extended (25,000), High Capacity (50,000), Extreme (100,000), and Target (200,000).
+   - **Cluster Preflight Verification**: Multi-factor validation checking Emergency Stop, Redis latency, PostgreSQL health, host RAM (>500MB), and online worker fleet capacity.
+   - **Operator Authorization**: Explicit cryptographic approval protocol for high-tier profiles (>=25k virtual users).
+   - **Automated Safety Aborts**: Instant termination on error rate spikes (>2.5x SLA or >12%) or low system memory (<300MB).
+   - **Reproducibility & Comparison**: Full software, infrastructure, and workload metadata capture with `IMPROVEMENT`, `REGRESSION`, `STABLE`, or `INCOMPARABLE` delta verdicts.
 
-6. **React 19 Analytics Dashboard**:
+6. **React 19 Analytics & Benchmarking Dashboard**:
    - Route-based code splitting with `React.lazy` and manual vendor chunking, achieving a **75% reduction** in initial bundle size.
+   - Interactive Benchmarks dashboard (`/benchmarks`) with profile selection, real-time preflight checklist, authorization acknowledgment, live telemetry, and regression comparison modal.
    - Interactive charts for Throughput, Latency Distributions (p50/p95/p99), Virtual User Ramps, and Event Breakdowns.
    - Prominent Emergency Halt banner with administrative clear actions.
 
@@ -104,7 +108,7 @@ npm run dev
 ```
 
 Visit the dashboard at `http://localhost:5173`.
-Default administrator account: `admin` / `ViewStormAdmin2026!`.
+On first launch, initialize the root administrator via one-time bootstrap token (displayed in the backend startup log or stored in `.viewstorm_bootstrap.token`).
 
 ### 4. Running Distributed Workers
 ```bash
@@ -118,13 +122,13 @@ python -m worker_agent.main --coordinator-url http://localhost:8000 --capacity 5
 
 ## Automated Verification
 
-### Backend Test Suite (64 Tests)
+### Backend Test Suite (71 Tests)
 ```bash
 cd backend
 pytest tests -v
 ```
 
-### Frontend Test Suite & Bundle Verification
+### Frontend Test Suite (15 Tests) & Bundle Verification
 ```bash
 cd frontend
 npm test
@@ -135,6 +139,15 @@ npm run build
 ---
 
 ## Documentation Index
+- [Milestone 7 Architecture](docs/MILESTONE_7_ARCHITECTURE.md)
+- [Worker Capacity Calibration](docs/WORKER_CAPACITY_CALIBRATION.md)
+- [Master Capacity Analysis](docs/MASTER_CAPACITY_ANALYSIS.md)
+- [Backend Capacity Analysis](docs/BACKEND_CAPACITY_ANALYSIS.md)
+- [Redis Capacity Analysis](docs/REDIS_CAPACITY_ANALYSIS.md)
+- [PostgreSQL Capacity Analysis](docs/POSTGRESQL_CAPACITY_ANALYSIS.md)
+- [Large-Scale Benchmarking](docs/LARGE_SCALE_BENCHMARKING.md)
+- [Capacity Planning (200k Users)](docs/CAPACITY_PLANNING.md)
+- [Benchmark Results](docs/BENCHMARK_RESULTS.md)
 - [Security & RBAC](docs/SECURITY.md)
 - [Reliability & Emergency Stop](docs/RELIABILITY_AND_RECOVERY.md)
 - [Benchmarking Guide](docs/BENCHMARKING_GUIDE.md)

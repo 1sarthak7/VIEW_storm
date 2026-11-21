@@ -1,9 +1,10 @@
-"""Benchmark Execution Database Model."""
+"""Benchmark Execution Database Model with Extended Reproducibility Metadata."""
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
@@ -42,6 +43,11 @@ class BenchmarkResult(Base):
         Integer,
         nullable=False,
     )
+    actual_active_users: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
     spawn_rate: Mapped[float] = mapped_column(
         Float,
         nullable=False,
@@ -51,6 +57,11 @@ class BenchmarkResult(Base):
         nullable=False,
     )
     total_requests: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+    accepted_events: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
@@ -80,6 +91,11 @@ class BenchmarkResult(Base):
         nullable=False,
         default=0.0,
     )
+    max_latency_ms: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
     error_rate_pct: Mapped[float] = mapped_column(
         Float,
         nullable=False,
@@ -90,6 +106,15 @@ class BenchmarkResult(Base):
         nullable=False,
         default=True,
     )
+    preflight_passed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+    approval_operator: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        nullable=True,
+    )
     abort_reason: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
@@ -98,6 +123,25 @@ class BenchmarkResult(Base):
         Text,
         nullable=True,
     )
+
+    # Detailed reproducibility & environment metadata
+    software_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB().with_variant(String, "sqlite"),
+        nullable=True,
+    )
+    infrastructure_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB().with_variant(String, "sqlite"),
+        nullable=True,
+    )
+    workload_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB().with_variant(String, "sqlite"),
+        nullable=True,
+    )
+    resource_metrics: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB().with_variant(String, "sqlite"),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -44,6 +44,7 @@ export const TopNav: React.FC<TopNavProps> = () => {
     if (path.startsWith('/simulations/')) return 'Simulation Details';
     if (path === '/simulations') return 'Simulation Management';
     if (path === '/workers') return 'Worker Nodes';
+    if (path === '/benchmarks') return 'Benchmark Management';
     if (path === '/analytics') return 'Performance Analytics';
     if (path === '/reports') return 'Historical Reports';
     if (path === '/settings') return 'Cluster Settings';

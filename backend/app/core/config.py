@@ -55,8 +55,13 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 1440  # 24 hours
     auth_enabled: bool = Field(default=True, alias="AUTH_ENABLED")
     admin_username: str = Field(default="admin", alias="VIEWSTORM_ADMIN_USERNAME")
-    admin_password: str = Field(default="ViewStormAdmin2026!", alias="VIEWSTORM_ADMIN_PASSWORD")
+    admin_password: Optional[str] = Field(default=None, alias="VIEWSTORM_ADMIN_PASSWORD")
     admin_email: str = Field(default="admin@viewstorm.local", alias="VIEWSTORM_ADMIN_EMAIL")
+    bootstrap_token: Optional[str] = Field(default=None, alias="VIEWSTORM_BOOTSTRAP_TOKEN")
+    bootstrap_token_file: str = Field(
+        default=".viewstorm_bootstrap.token",
+        alias="VIEWSTORM_BOOTSTRAP_FILE",
+    )
     login_rate_limit_max_attempts: int = 5
     login_rate_limit_window_seconds: int = 300
 

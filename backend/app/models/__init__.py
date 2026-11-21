@@ -7,6 +7,7 @@ from app.models.metrics import SimulationMetric
 from app.models.simulation import SimulationRun
 from app.models.user import User, UserRole
 from app.models.worker import SimulationWorker
+from app.models.worker_calibration import WorkerCalibration
 from app.models.worker_node import LoadGeneratorNode
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "User",
     "UserRole",
     "BenchmarkResult",
+    "WorkerCalibration",
 ]

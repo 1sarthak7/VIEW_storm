@@ -17,8 +17,8 @@ async def test_list_benchmark_profiles(client: AsyncClient):
     assert "smoke" in profile_names
     assert "baseline" in profile_names
     assert "medium" in profile_names
-    assert "high" in profile_names
-    assert "distributed" in profile_names
+    assert "high_capacity" in profile_names
+    assert "target" in profile_names
 
 
 @pytest.mark.asyncio

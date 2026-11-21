@@ -9,6 +9,7 @@ import {
   FileText,
   Settings,
   Zap,
+  Gauge,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { to: '/', label: 'Overview', icon: Activity },
     { to: '/simulations', label: 'Simulations', icon: Layers },
     { to: '/workers', label: 'Worker Nodes', icon: Server },
+    { to: '/benchmarks', label: 'Benchmarks', icon: Gauge },
     { to: '/analytics', label: 'Analytics', icon: BarChart3 },
     { to: '/reports', label: 'Reports', icon: FileText },
     { to: '/settings', label: 'Settings', icon: Settings },
