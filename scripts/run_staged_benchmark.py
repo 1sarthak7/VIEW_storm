@@ -73,20 +73,26 @@ async def run_single_stage(
     print(f"  ✓ Benchmark launched: ID={benchmark_id}, Users={bmk.get('virtual_users')}, Configured Duration={duration}s")
 
     # 4. Wait for Completion
-    print(f"  [3/4] Running experiment window ({duration + 5}s)...")
-    await asyncio.sleep(duration + 4)
+    print(f"  [3/4] Running experiment window ({duration}s)...")
+    await asyncio.sleep(duration + 2)
 
-    # 5. Fetch Final Report and Artifacts
+    # 5. Fetch Final Report and Artifacts (poll until finalization commits)
     print("  [4/4] Verifying Final SLA Results & Artifacts...")
-    res_resp = await client.get(
-        f"{base_url.rstrip('/')}/api/v1/benchmarks/results/{benchmark_id}",
-        headers=headers,
-    )
-    if res_resp.status_code != 200:
+    final_data = {}
+    for _ in range(15):
+        await asyncio.sleep(1.5)
+        res_resp = await client.get(
+            f"{base_url.rstrip('/')}/api/v1/benchmarks/results/{benchmark_id}",
+            headers=headers,
+        )
+        if res_resp.status_code == 200:
+            final_data = res_resp.json()
+            if (final_data.get("requests_per_second", 0.0) > 0.0) or final_data.get("abort_reason"):
+                break
+
+    if not final_data:
         print(f"  ✗ Failed to fetch final results: HTTP {res_resp.status_code}")
         return False
-
-    final_data = res_resp.json()
     passed = final_data.get("passed_thresholds")
     status_str = "SLA PASSED" if passed else "SLA BREACHED / ABORTED"
     print(f"\n  Final Result: {status_str}")

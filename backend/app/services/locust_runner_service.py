@@ -6,7 +6,7 @@ import signal
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ViewStormException
@@ -73,11 +73,15 @@ class LocustRunnerService:
 
     async def start_runner(
         self,
-        run: SimulationRunResponse,
+        run: Union[SimulationRunResponse, str],
         target_host: Optional[str] = None,
         db: Optional[AsyncSession] = None,
     ) -> RunnerMetadata:
         """Launch Locust in a separate subprocess with isolated artifacts."""
+        if isinstance(run, str):
+            from app.services.simulation_service import simulation_service
+            run = await simulation_service.get_run(run, db=db)
+
         async with self._lock:
             if self.is_runner_active(run.id):
                 raise RunnerAlreadyActiveError(run.id)

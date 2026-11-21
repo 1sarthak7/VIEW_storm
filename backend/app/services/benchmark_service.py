@@ -422,10 +422,17 @@ class BenchmarkService:
         await db.refresh(benchmark)
 
         # 4. Launch execution engine
+        started_run = await simulation_service.start_run(sim_run.id, db=db)
+        target_host = runner_settings.dataplane_target_url
         if exec_mode == "distributed":
-            await distributed_runner_service.start_master(sim_run.id, db=db)
+            online_nodes = await worker_registry_service.list_active_nodes(status="online", db=db)
+            await distributed_runner_service.start_master(
+                started_run,
+                expected_workers=len(online_nodes),
+                target_host=target_host,
+            )
         else:
-            await locust_runner_service.start_runner(sim_run.id, db=db)
+            await locust_runner_service.start_runner(started_run, target_host=target_host, db=db)
 
         # 5. Spawn background safety guardrail monitor
         asyncio.create_task(
