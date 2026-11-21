@@ -8,6 +8,7 @@ from app.core.runner_config import runner_settings
 from app.database.redis import get_redis
 from app.database.session import get_db
 from app.schemas.run import SimulationRunCreate, SimulationRunResponse
+from app.schemas.worker import SimulationWorkerResponse
 from app.services.distributed_runner_service import distributed_runner_service
 from app.services.locust_runner_service import locust_runner_service
 from app.services.simulation_service import simulation_service
@@ -53,6 +54,39 @@ async def get_simulation_run(
 ) -> SimulationRunResponse:
     """Retrieve details for a specific simulation run."""
     return await simulation_service.get_run(run_id, db=db)
+
+
+@router.get(
+    "/runs/{run_id}/workers",
+    response_model=List[SimulationWorkerResponse],
+    tags=["Simulations"],
+)
+async def get_simulation_run_workers(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> List[SimulationWorkerResponse]:
+    """Retrieve worker allocations for a simulation run."""
+    from app.repositories.worker_repository import WorkerRepository
+    repo = WorkerRepository(db)
+    workers = await repo.get_assignments_for_run(run_id)
+    return [
+        SimulationWorkerResponse(
+            id=w.id,
+            run_id=w.run_id,
+            worker_node_id=w.worker_node_id,
+            worker_identifier=w.worker_identifier,
+            status=w.status,
+            assigned_users=w.assigned_users,
+            active_users=w.active_users,
+            worker_process_count=w.worker_process_count,
+            last_heartbeat=w.last_heartbeat,
+            started_at=w.started_at,
+            finished_at=w.finished_at,
+            error_message=w.error_message,
+            resource_information=w.resource_information,
+        )
+        for w in workers
+    ]
 
 
 @router.post(

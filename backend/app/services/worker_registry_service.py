@@ -167,6 +167,22 @@ class WorkerRegistryService:
             should_stop_run=should_stop,
         )
 
+    async def get_node(
+        self,
+        node_id: str,
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[WorkerNodeResponse]:
+        """Fetch worker node by ID."""
+        async def _get(session: AsyncSession) -> Optional[WorkerNodeResponse]:
+            repo = WorkerRepository(session)
+            node = await repo.get_node_by_id(node_id)
+            return self._entity_to_response(node) if node else None
+
+        if db is not None:
+            return await _get(db)
+        async with AsyncSessionLocal() as session:
+            return await _get(session)
+
     async def list_active_nodes(
         self,
         status: Optional[str] = None,

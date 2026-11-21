@@ -87,6 +87,19 @@ services:
     networks:
       - viewstorm_network
 
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: viewstorm-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - viewstorm_network
+
 volumes:
   postgres_data:
     driver: local

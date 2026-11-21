@@ -107,3 +107,21 @@ class WorkerNodeResponse(BaseModel):
     capacity: int
     last_heartbeat: datetime
     registered_at: datetime
+
+
+class SimulationWorkerResponse(BaseModel):
+    """Worker assignment details for a simulation run."""
+    id: int
+    run_id: str
+    worker_node_id: Optional[str] = None
+    worker_identifier: str
+    status: str
+    assigned_users: int
+    active_users: int
+    worker_process_count: int
+    last_heartbeat: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    resource_information: Optional[Dict[str, Any]] = None
+

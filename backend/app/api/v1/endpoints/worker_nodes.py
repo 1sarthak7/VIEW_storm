@@ -72,6 +72,22 @@ async def get_worker_assignment(
     return await worker_assignment_service.get_worker_assignment(worker_id, redis=redis)
 
 
+@router.get(
+    "/{worker_id}",
+    response_model=WorkerNodeResponse,
+)
+async def get_worker_node(
+    worker_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> WorkerNodeResponse:
+    """Retrieve details for a specific registered worker node."""
+    from fastapi import HTTPException
+    node = await worker_registry_service.get_node(worker_id, db=db)
+    if not node:
+        raise HTTPException(status_code=404, detail=f"Worker node '{worker_id}' not found")
+    return node
+
+
 @router.post(
     "/{worker_id}/assignments/{run_id}/acknowledge",
     status_code=status.HTTP_200_OK,
