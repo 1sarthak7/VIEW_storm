@@ -1,4 +1,4 @@
-"""Simulation Runs API Endpoints with Asynchronous Database Dependency Injection."""
+"""Simulation Runs API Endpoints with Locust Runner Integration."""
 
 from typing import List
 from fastapi import APIRouter, Depends, status
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.redis import get_redis
 from app.database.session import get_db
 from app.schemas.run import SimulationRunCreate, SimulationRunResponse
+from app.services.locust_runner_service import locust_runner_service
 from app.services.simulation_service import simulation_service
 
 router = APIRouter()
@@ -61,8 +62,15 @@ async def start_simulation_run(
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ) -> SimulationRunResponse:
-    """Start an authorized simulation run and initialize Redis counters."""
-    return await simulation_service.start_run(run_id, db=db, redis=redis)
+    """Start an authorized simulation run and launch the Locust runner subprocess."""
+    started_run = await simulation_service.start_run(run_id, db=db, redis=redis)
+    try:
+        await locust_runner_service.start_runner(started_run, db=db)
+    except Exception:
+        # If runner launch fails, safely stop run
+        await simulation_service.stop_run(run_id, db=db, redis=redis)
+        raise
+    return started_run
 
 
 @router.post(
@@ -75,5 +83,6 @@ async def stop_simulation_run(
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ) -> SimulationRunResponse:
-    """Safely stop an active simulation run and flush summaries to PostgreSQL."""
+    """Safely stop an active simulation run and terminate the Locust runner subprocess."""
+    await locust_runner_service.stop_runner(run_id)
     return await simulation_service.stop_run(run_id, db=db, redis=redis)

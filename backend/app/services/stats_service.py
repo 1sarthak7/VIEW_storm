@@ -1,10 +1,13 @@
-"""Statistics Aggregation and Reporting Service with Redis & PostgreSQL Integration."""
+"""Statistics Aggregation and Reporting Service with Real Locust Metrics Integration."""
 
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
+import psutil
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.runner_config import runner_settings
 from app.database.redis import (
     redis_client,
     run_event_types_key,
@@ -20,6 +23,7 @@ from app.schemas.stats import (
     SimulationReportResponse,
     SimulationStatsResponse,
 )
+from app.services.locust_metrics_collector import locust_metrics_collector
 from app.services.simulation_service import simulation_service
 
 
@@ -41,7 +45,6 @@ class StatsService:
         viewers_key = run_viewers_key(run_id)
         timestamps_key = run_timestamps_key(run_id)
 
-        # Fetch Redis data concurrently
         stats_data = await r.hgetall(stats_key)
         events_by_type_raw = await r.hgetall(types_key)
         unique_viewers = await r.scard(viewers_key)
@@ -99,7 +102,6 @@ class StatsService:
         run = await simulation_service.get_run(run_id, db=db)
         now = datetime.now(timezone.utc)
 
-        # Check for persisted metrics in PostgreSQL
         persisted_points: list[MetricPoint] = []
         if db is not None:
             repo = SimulationRepository(db)
@@ -142,7 +144,7 @@ class StatsService:
         db: Optional[AsyncSession] = None,
         redis: Optional[Redis] = None,
     ) -> SimulationReportResponse:
-        """Generate comprehensive final simulation report."""
+        """Generate comprehensive final simulation report including Locust measurements."""
         run = await simulation_service.get_run(run_id, db=db)
         stats = await self.get_current_stats(run_id, redis=redis, db=db)
 
@@ -151,6 +153,20 @@ class StatsService:
             if stats.elapsed_seconds > 0
             else 0.0
         )
+
+        # Check for actual Locust output metrics
+        artifacts_dir = runner_settings.artifacts_dir / run_id
+        locust_metrics = locust_metrics_collector.parse_locust_stats(artifacts_dir)
+
+        # Read actual system resource utilization
+        try:
+            resources = {
+                "cpu_percent": psutil.cpu_percent(interval=None),
+                "ram_percent": psutil.virtual_memory().percent,
+                "disk_usage_percent": psutil.disk_usage("/").percent,
+            }
+        except Exception:
+            resources = None
 
         return SimulationReportResponse(
             run_id=run.id,
@@ -169,6 +185,17 @@ class StatsService:
             average_watch_duration_ms=stats.average_watch_duration_ms,
             events_breakdown=stats.events_by_type,
             average_throughput_eps=round(avg_eps, 2),
+            total_http_requests=locust_metrics.total_requests,
+            successful_http_requests=locust_metrics.successful_requests,
+            failed_http_requests=locust_metrics.failed_requests,
+            requests_per_second=locust_metrics.requests_per_second,
+            min_latency_ms=locust_metrics.min_latency_ms,
+            avg_latency_ms=locust_metrics.avg_latency_ms,
+            p50_latency_ms=locust_metrics.p50_latency_ms,
+            p95_latency_ms=locust_metrics.p95_latency_ms,
+            p99_latency_ms=locust_metrics.p99_latency_ms,
+            max_latency_ms=locust_metrics.max_latency_ms,
+            resource_observations=resources,
             started_at=run.started_at,
             finished_at=run.finished_at,
         )

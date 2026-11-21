@@ -1,7 +1,7 @@
-"""Statistics and Metrics Schemas."""
+"""Statistics and Metrics Schemas with Real Locust Performance Reporting."""
 
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from app.schemas.run import SimulationStatus
 
@@ -51,6 +51,8 @@ class SimulationReportResponse(BaseModel):
     configured_users: int
     duration_seconds: int
     actual_duration_seconds: float
+
+    # Playback telemetry totals
     total_submissions: int
     accepted_events: int
     rejected_events: int
@@ -60,5 +62,21 @@ class SimulationReportResponse(BaseModel):
     average_watch_duration_ms: float
     events_breakdown: Dict[str, int]
     average_throughput_eps: float
+
+    # Real Locust Performance Measurements
+    total_http_requests: int = 0
+    successful_http_requests: int = 0
+    failed_http_requests: int = 0
+    requests_per_second: float = 0.0
+    min_latency_ms: float = 0.0
+    avg_latency_ms: float = 0.0
+    p50_latency_ms: float = 0.0
+    p95_latency_ms: float = 0.0
+    p99_latency_ms: float = 0.0
+    max_latency_ms: float = 0.0
+
+    # System & Resource Observations
+    resource_observations: Optional[Dict[str, Any]] = None
+
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
