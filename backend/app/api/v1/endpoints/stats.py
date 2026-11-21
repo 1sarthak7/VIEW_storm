@@ -1,6 +1,10 @@
-"""Statistics, Metrics, and Reporting Endpoints."""
+"""Statistics, Metrics, and Reporting Endpoints with Redis & PostgreSQL Integration."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.redis import get_redis
+from app.database.session import get_db
 from app.schemas.stats import (
     SimulationMetricsResponse,
     SimulationReportResponse,
@@ -16,9 +20,13 @@ router = APIRouter()
     response_model=SimulationStatsResponse,
     tags=["Analytics & Reports"],
 )
-def get_run_statistics(run_id: str) -> SimulationStatsResponse:
-    """Retrieve real-time aggregated metrics for a simulation run."""
-    return stats_service.get_current_stats(run_id)
+async def get_run_statistics(
+    run_id: str,
+    redis: Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
+) -> SimulationStatsResponse:
+    """Retrieve real-time aggregated metrics directly from Redis counters."""
+    return await stats_service.get_current_stats(run_id, redis=redis, db=db)
 
 
 @router.get(
@@ -26,9 +34,13 @@ def get_run_statistics(run_id: str) -> SimulationStatsResponse:
     response_model=SimulationMetricsResponse,
     tags=["Analytics & Reports"],
 )
-def get_run_metrics(run_id: str) -> SimulationMetricsResponse:
-    """Retrieve historical time-series metrics data points."""
-    return stats_service.get_metrics(run_id)
+async def get_run_metrics(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> SimulationMetricsResponse:
+    """Retrieve historical time-series performance data points."""
+    return await stats_service.get_metrics(run_id, db=db, redis=redis)
 
 
 @router.get(
@@ -36,6 +48,10 @@ def get_run_metrics(run_id: str) -> SimulationMetricsResponse:
     response_model=SimulationReportResponse,
     tags=["Analytics & Reports"],
 )
-def get_run_report(run_id: str) -> SimulationReportResponse:
+async def get_run_report(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> SimulationReportResponse:
     """Generate final comprehensive summary report for a simulation."""
-    return stats_service.generate_report(run_id)
+    return await stats_service.generate_report(run_id, db=db, redis=redis)

@@ -1,10 +1,20 @@
-"""High-Throughput Synthetic Event Ingestion Service with Idempotency."""
+"""High-Throughput Synthetic Event Ingestion Service with Redis Atomic Lua Scripts."""
 
-import threading
-from collections import defaultdict, deque
 from datetime import datetime, timezone
-from typing import Dict, List, Set, Tuple
-from app.core.errors import SimulationNotActiveError, SimulationNotFoundError
+from typing import Optional
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.config import settings
+from app.core.errors import SimulationNotActiveError
+from app.database.redis import (
+    INGEST_EVENT_LUA,
+    redis_client,
+    run_event_types_key,
+    run_events_key,
+    run_stats_key,
+    run_timestamps_key,
+    run_viewers_key,
+)
 from app.schemas.event import (
     PlaybackEventBatchCreate,
     PlaybackEventBatchResponse,
@@ -15,88 +25,95 @@ from app.schemas.run import SimulationStatus
 from app.services.simulation_service import simulation_service
 
 
-class RunEventAggregator:
-    """Thread-safe statistics collector for a single simulation run."""
-
-    def __init__(self, run_id: str) -> None:
-        self.run_id = run_id
-        self.lock = threading.Lock()
-        self.total_submissions: int = 0
-        self.accepted_events: int = 0
-        self.duplicate_events: int = 0
-        self.rejected_events: int = 0
-        self.unique_viewers: Set[str] = set()
-        self.events_by_type: Dict[str, int] = defaultdict(int)
-        self.total_watch_duration_ms: int = 0
-        # Rolling recent event timestamps for RPS calculation
-        self.recent_timestamps: deque = deque(maxlen=2000)
-        # Deduplication cache per run: set of event_id strings
-        self.seen_event_ids: Set[str] = set()
-
-
 class EventService:
-    """Processes synthetic playback events, performs idempotency checks, and updates counters."""
+    """Processes synthetic playback events atomically using Redis."""
 
     def __init__(self) -> None:
-        self._aggregators: Dict[str, RunEventAggregator] = {}
-        self._global_lock = threading.Lock()
+        self._lua_script_sha: Optional[str] = None
 
-    def _get_or_create_aggregator(self, run_id: str) -> RunEventAggregator:
-        with self._global_lock:
-            if run_id not in self._aggregators:
-                self._aggregators[run_id] = RunEventAggregator(run_id)
-            return self._aggregators[run_id]
+    async def _ensure_lua_script(self, r: Redis) -> str:
+        """Load and cache the atomic ingestion Lua script SHA."""
+        if not self._lua_script_sha:
+            self._lua_script_sha = await r.script_load(INGEST_EVENT_LUA)
+        return self._lua_script_sha
 
-    def ingest_event(self, event: PlaybackEventCreate) -> PlaybackEventResponse:
-        """Validate, deduplicate, and record a single synthetic playback event."""
-        # 1. Verify simulation exists and check status
-        run = simulation_service.get_run(event.run_id)
-        aggregator = self._get_or_create_aggregator(event.run_id)
+    async def ingest_event(
+        self,
+        event: PlaybackEventCreate,
+        redis: Optional[Redis] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> PlaybackEventResponse:
+        """
+        Atomically validate, deduplicate, and record a single synthetic playback event in Redis.
+        """
+        r = redis or redis_client
         now = datetime.now(timezone.utc)
 
-        with aggregator.lock:
-            aggregator.total_submissions += 1
+        # 1. Verify simulation exists and is actively running
+        run = await simulation_service.get_run(event.run_id, db=db)
+        if run.status != SimulationStatus.RUNNING:
+            # Increment rejected counter in Redis
+            stats_key = run_stats_key(event.run_id)
+            await r.hincrby(stats_key, "total_submissions", 1)
+            await r.hincrby(stats_key, "rejected_events", 1)
+            raise SimulationNotActiveError(run_id=event.run_id, current_status=run.status.value)
 
-            if run.status != SimulationStatus.RUNNING:
-                aggregator.rejected_events += 1
-                raise SimulationNotActiveError(run_id=event.run_id, current_status=run.status.value)
+        # 2. Execute Atomic Redis Lua Script for Deduplication and Increments
+        keys = [
+            run_events_key(event.run_id),
+            run_stats_key(event.run_id),
+            run_event_types_key(event.run_id),
+            run_viewers_key(event.run_id),
+            run_timestamps_key(event.run_id),
+        ]
+        args = [
+            event.event_id,
+            event.event_type.value,
+            event.viewer_id,
+            event.watch_duration_ms,
+            event.timestamp.timestamp(),
+            settings.stats_retention_ttl_seconds,
+        ]
 
-            # 2. Idempotency Check
-            if event.event_id in aggregator.seen_event_ids:
-                aggregator.duplicate_events += 1
-                return PlaybackEventResponse(
-                    status="duplicate",
-                    event_id=event.event_id,
-                    run_id=event.run_id,
-                    received_at=now,
-                    message="Duplicate event ignored (idempotent submission)",
-                )
+        try:
+            sha = await self._ensure_lua_script(r)
+            result = await r.evalsha(sha, len(keys), *keys, *args)
+        except Exception:
+            # Fallback to direct eval if script SHA expired or flush occurred
+            result = await r.eval(INGEST_EVENT_LUA, len(keys), *keys, *args)
 
-            # 3. Accept and aggregate unique synthetic event
-            aggregator.seen_event_ids.add(event.event_id)
-            aggregator.accepted_events += 1
-            aggregator.unique_viewers.add(event.viewer_id)
-            aggregator.events_by_type[event.event_type.value] += 1
-            aggregator.total_watch_duration_ms += event.watch_duration_ms
-            aggregator.recent_timestamps.append(now.timestamp())
+        # Lua returns 1 for accepted, 0 for duplicate
+        if result == 1:
+            return PlaybackEventResponse(
+                status="accepted",
+                event_id=event.event_id,
+                run_id=event.run_id,
+                received_at=now,
+                message="Synthetic event accepted",
+            )
+        else:
+            return PlaybackEventResponse(
+                status="duplicate",
+                event_id=event.event_id,
+                run_id=event.run_id,
+                received_at=now,
+                message="Duplicate event ignored (idempotent submission)",
+            )
 
-        return PlaybackEventResponse(
-            status="accepted",
-            event_id=event.event_id,
-            run_id=event.run_id,
-            received_at=now,
-            message="Synthetic event accepted",
-        )
-
-    def ingest_batch(self, batch: PlaybackEventBatchCreate) -> PlaybackEventBatchResponse:
-        """Batch ingestion optimization for high-rate synthetic workers."""
+    async def ingest_batch(
+        self,
+        batch: PlaybackEventBatchCreate,
+        redis: Optional[Redis] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> PlaybackEventBatchResponse:
+        """Batch ingestion for high-rate synthetic workers."""
         accepted = 0
         duplicates = 0
         rejected = 0
 
         for event in batch.events:
             try:
-                res = self.ingest_event(event)
+                res = await self.ingest_event(event, redis=redis, db=db)
                 if res.status == "accepted":
                     accepted += 1
                 elif res.status == "duplicate":
@@ -110,10 +127,6 @@ class EventService:
             duplicates=duplicates,
             rejected=rejected,
         )
-
-    def get_aggregator(self, run_id: str) -> RunEventAggregator:
-        """Retrieve event statistics collector for a given simulation run."""
-        return self._get_or_create_aggregator(run_id)
 
 
 event_service = EventService()

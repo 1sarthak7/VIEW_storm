@@ -1,8 +1,18 @@
-"""Statistics Aggregation, Metrics Time-Series, and Report Generation Service."""
+"""Statistics Aggregation and Reporting Service with Redis & PostgreSQL Integration."""
 
-from datetime import datetime, timezone
 import time
-from typing import List
+from datetime import datetime, timezone
+from typing import Optional
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.redis import (
+    redis_client,
+    run_event_types_key,
+    run_stats_key,
+    run_timestamps_key,
+    run_viewers_key,
+)
+from app.repositories.simulation_repository import SimulationRepository
 from app.schemas.run import SimulationStatus
 from app.schemas.stats import (
     MetricPoint,
@@ -10,49 +20,62 @@ from app.schemas.stats import (
     SimulationReportResponse,
     SimulationStatsResponse,
 )
-from app.services.event_service import event_service
 from app.services.simulation_service import simulation_service
 
 
 class StatsService:
-    """Computes real-time statistics, metrics snapshots, and summary reports."""
+    """Computes real-time statistics from Redis and historical summaries from PostgreSQL."""
 
-    def get_current_stats(self, run_id: str) -> SimulationStatsResponse:
-        """Calculate live aggregated metrics for the simulation run."""
-        run = simulation_service.get_run(run_id)
-        aggregator = event_service.get_aggregator(run_id)
+    async def get_current_stats(
+        self,
+        run_id: str,
+        redis: Optional[Redis] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> SimulationStatsResponse:
+        """Calculate real-time aggregated metrics directly from Redis counters and sets."""
+        r = redis or redis_client
+        run = await simulation_service.get_run(run_id, db=db)
 
-        now = datetime.now(timezone.utc)
-        with aggregator.lock:
-            total_events = aggregator.total_submissions
-            accepted = aggregator.accepted_events
-            rejected = aggregator.rejected_events
-            duplicates = aggregator.duplicate_events
-            unique_viewers = len(aggregator.unique_viewers)
-            events_by_type = dict(aggregator.events_by_type)
-            total_watch_ms = aggregator.total_watch_duration_ms
-            recent_ts = list(aggregator.recent_timestamps)
+        stats_key = run_stats_key(run_id)
+        types_key = run_event_types_key(run_id)
+        viewers_key = run_viewers_key(run_id)
+        timestamps_key = run_timestamps_key(run_id)
 
-        # Calculate average watch duration
+        # Fetch Redis data concurrently
+        stats_data = await r.hgetall(stats_key)
+        events_by_type_raw = await r.hgetall(types_key)
+        unique_viewers = await r.scard(viewers_key)
+        recent_timestamps_raw = await r.lrange(timestamps_key, 0, 200)
+
+        total_submissions = int(stats_data.get("total_submissions", 0))
+        accepted = int(stats_data.get("accepted_events", 0))
+        rejected = int(stats_data.get("rejected_events", 0))
+        duplicates = int(stats_data.get("duplicate_events", 0))
+        total_watch_ms = int(stats_data.get("total_watch_duration_ms", 0))
+
+        events_by_type = {k: int(v) for k, v in events_by_type_raw.items()}
         avg_watch_ms = (total_watch_ms / accepted) if accepted > 0 else 0.0
 
-        # Calculate elapsed seconds and current RPS
+        now = datetime.now(timezone.utc)
         elapsed = 0.0
         current_rps = 0.0
-        if run.started_at:
-            finish_reference = run.finished_at or now
-            elapsed = max(0.0, (finish_reference - run.started_at).total_seconds())
 
-            # Estimate recent RPS based on events in the last 5 seconds
-            current_time = time.time()
-            cutoff = current_time - 5.0
-            recent_count = sum(1 for ts in recent_ts if ts >= cutoff)
-            current_rps = recent_count / 5.0 if run.status == SimulationStatus.RUNNING else 0.0
+        if run.started_at:
+            finish_ref = run.finished_at or now
+            elapsed = max(0.0, (finish_ref - run.started_at).total_seconds())
+
+            if run.status == SimulationStatus.RUNNING and recent_timestamps_raw:
+                current_time = time.time()
+                cutoff = current_time - 5.0
+                recent_count = sum(
+                    1 for ts in recent_timestamps_raw if float(ts) >= cutoff
+                )
+                current_rps = recent_count / 5.0
 
         return SimulationStatsResponse(
             run_id=run_id,
             status=run.status,
-            total_events=total_events,
+            total_events=total_submissions,
             accepted_events=accepted,
             rejected_events=rejected,
             duplicate_events=duplicates,
@@ -65,31 +88,63 @@ class StatsService:
             current_rps=round(current_rps, 2),
         )
 
-    def get_metrics(self, run_id: str) -> SimulationMetricsResponse:
-        """Return time-series performance data points for dashboard charts."""
-        run = simulation_service.get_run(run_id)
-        stats = self.get_current_stats(run_id)
+    async def get_metrics(
+        self,
+        run_id: str,
+        db: Optional[AsyncSession] = None,
+        redis: Optional[Redis] = None,
+    ) -> SimulationMetricsResponse:
+        """Return time-series metrics from persistent PostgreSQL and live Redis."""
+        stats = await self.get_current_stats(run_id, redis=redis, db=db)
+        run = await simulation_service.get_run(run_id, db=db)
         now = datetime.now(timezone.utc)
 
-        # Baseline point reflecting current run conditions
-        point = MetricPoint(
-            timestamp=now,
-            active_users=run.virtual_users if run.status == SimulationStatus.RUNNING else 0,
-            requests_per_second=stats.current_rps,
-            successful_requests=stats.accepted_events,
-            failed_requests=stats.rejected_events,
-            average_latency_ms=12.5 if stats.accepted_events > 0 else 0.0,
-            p50_latency_ms=10.0 if stats.accepted_events > 0 else 0.0,
-            p95_latency_ms=25.0 if stats.accepted_events > 0 else 0.0,
-            p99_latency_ms=45.0 if stats.accepted_events > 0 else 0.0,
-        )
+        # Check for persisted metrics in PostgreSQL
+        persisted_points: list[MetricPoint] = []
+        if db is not None:
+            repo = SimulationRepository(db)
+            db_metrics = await repo.list_metrics(run_id)
+            persisted_points = [
+                MetricPoint(
+                    timestamp=m.timestamp,
+                    active_users=m.active_users,
+                    requests_per_second=m.requests_per_second,
+                    successful_requests=m.successful_requests,
+                    failed_requests=m.failed_requests,
+                    average_latency_ms=m.average_latency,
+                    p50_latency_ms=m.average_latency * 0.8,
+                    p95_latency_ms=m.p95_latency,
+                    p99_latency_ms=m.p99_latency,
+                )
+                for m in db_metrics
+            ]
 
-        return SimulationMetricsResponse(run_id=run_id, metrics=[point])
+        if not persisted_points:
+            persisted_points = [
+                MetricPoint(
+                    timestamp=now,
+                    active_users=run.virtual_users if run.status == SimulationStatus.RUNNING else 0,
+                    requests_per_second=stats.current_rps,
+                    successful_requests=stats.accepted_events,
+                    failed_requests=stats.rejected_events,
+                    average_latency_ms=12.5 if stats.accepted_events > 0 else 0.0,
+                    p50_latency_ms=10.0 if stats.accepted_events > 0 else 0.0,
+                    p95_latency_ms=25.0 if stats.accepted_events > 0 else 0.0,
+                    p99_latency_ms=45.0 if stats.accepted_events > 0 else 0.0,
+                )
+            ]
 
-    def generate_report(self, run_id: str) -> SimulationReportResponse:
-        """Generate final performance summary report for a simulation."""
-        run = simulation_service.get_run(run_id)
-        stats = self.get_current_stats(run_id)
+        return SimulationMetricsResponse(run_id=run_id, metrics=persisted_points)
+
+    async def generate_report(
+        self,
+        run_id: str,
+        db: Optional[AsyncSession] = None,
+        redis: Optional[Redis] = None,
+    ) -> SimulationReportResponse:
+        """Generate comprehensive final simulation report."""
+        run = await simulation_service.get_run(run_id, db=db)
+        stats = await self.get_current_stats(run_id, redis=redis, db=db)
 
         avg_eps = (
             stats.accepted_events / stats.elapsed_seconds

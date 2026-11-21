@@ -9,15 +9,25 @@ from app.api.v1.router import api_v1_router
 from app.core.config import settings
 from app.core.errors import ViewStormException, viewstorm_exception_handler
 from app.core.logging import logger, setup_logging
+from app.database.redis import redis_pool
+from app.database.session import engine
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application startup and shutdown lifecycle management."""
-    setup_logging()
-    logger.info("Initializing %s v%s in '%s' environment", settings.project_name, settings.version, settings.environment)
+    """Application startup and graceful shutdown lifecycle management."""
+    setup_logging(level=settings.log_level)
+    logger.info(
+        "Initializing %s v%s in '%s' environment",
+        settings.project_name,
+        settings.version,
+        settings.environment,
+    )
     yield
-    logger.info("Shutting down %s", settings.project_name)
+    logger.info("Closing database engine and Redis connection pool...")
+    await engine.dispose()
+    await redis_pool.disconnect()
+    logger.info("Shutdown complete for %s", settings.project_name)
 
 
 def create_application() -> FastAPI:
@@ -32,7 +42,6 @@ def create_application() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Cross-Origin Resource Sharing (CORS) for development dashboard
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -41,13 +50,12 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Register custom domain exception handler
     app.add_exception_handler(ViewStormException, viewstorm_exception_handler)
 
-    # Direct /health endpoint as required by specification
+    # Root health endpoint
     app.add_api_route("/health", get_health, tags=["Health"])
 
-    # Include API version 1 routers
+    # API v1 routes
     app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
 
     return app

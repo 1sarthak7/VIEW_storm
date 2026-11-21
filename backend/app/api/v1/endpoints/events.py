@@ -1,6 +1,10 @@
-"""Synthetic Playback Event Ingestion Endpoints."""
+"""Synthetic Playback Event Ingestion Endpoints with Redis Atomic Execution."""
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.redis import get_redis
+from app.database.session import get_db
 from app.schemas.event import (
     PlaybackEventBatchCreate,
     PlaybackEventBatchResponse,
@@ -18,12 +22,16 @@ router = APIRouter()
     status_code=status.HTTP_202_ACCEPTED,
     tags=["Playback Events"],
 )
-def ingest_playback_event(event: PlaybackEventCreate) -> PlaybackEventResponse:
+async def ingest_playback_event(
+    event: PlaybackEventCreate,
+    redis: Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
+) -> PlaybackEventResponse:
     """
     Accept synthetic playback event from virtual viewer load generator.
-    Validates payload, enforces run status, and ensures idempotency.
+    Enforces active run status, atomic deduplication, and high-speed Redis counting.
     """
-    return event_service.ingest_event(event)
+    return await event_service.ingest_event(event, redis=redis, db=db)
 
 
 @router.post(
@@ -32,9 +40,12 @@ def ingest_playback_event(event: PlaybackEventCreate) -> PlaybackEventResponse:
     status_code=status.HTTP_202_ACCEPTED,
     tags=["Playback Events"],
 )
-def ingest_playback_events_batch(batch: PlaybackEventBatchCreate) -> PlaybackEventBatchResponse:
+async def ingest_playback_events_batch(
+    batch: PlaybackEventBatchCreate,
+    redis: Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
+) -> PlaybackEventBatchResponse:
     """
-    Accept high-rate batch of synthetic playback events.
-    Optimized for distributed worker throughput.
+    High-rate batch event ingestion for distributed load generator workers.
     """
-    return event_service.ingest_batch(batch)
+    return await event_service.ingest_batch(batch, redis=redis, db=db)

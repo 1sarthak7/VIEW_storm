@@ -1,18 +1,21 @@
-"""Tests for statistics aggregation, time-series metrics, and reports."""
+"""Tests for statistics aggregation, time-series metrics, and reports with Redis & PostgreSQL."""
 
 from datetime import datetime, timezone
-from fastapi.testclient import TestClient
+import pytest
+from httpx import AsyncClient
+
+pytestmark = pytest.mark.asyncio
 
 
-def test_statistics_aggregation_accuracy(client: TestClient):
-    """Verify statistics accurately count unique viewers, watch duration, and event breakdown."""
+async def test_statistics_aggregation_accuracy(client: AsyncClient):
+    """Verify statistics accurately count unique viewers, watch duration, and event breakdown in Redis."""
     # 1. Create and start run
-    run_res = client.post(
+    run_res = await client.post(
         "/api/v1/runs",
         json={"name": "Stats Test", "virtual_users": 10, "duration_seconds": 60},
     )
     run_id = run_res.json()["id"]
-    client.post(f"/api/v1/runs/{run_id}/start")
+    await client.post(f"/api/v1/runs/{run_id}/start")
 
     # 2. Ingest events: 2 viewers, 3 events
     now = datetime.now(timezone.utc).isoformat()
@@ -47,33 +50,33 @@ def test_statistics_aggregation_accuracy(client: TestClient):
     ]
 
     for ev in events:
-        res = client.post("/api/v1/events/playback", json=ev)
+        res = await client.post("/api/v1/events/playback", json=ev)
         assert res.status_code == 202
 
     # 3. Check statistics
-    stats_res = client.get(f"/api/v1/runs/{run_id}/stats")
+    stats_res = await client.get(f"/api/v1/runs/{run_id}/stats")
     assert stats_res.status_code == 200
     stats = stats_res.json()
     assert stats["run_id"] == run_id
     assert stats["accepted_events"] == 3
-    assert stats["unique_viewers_count"] == 2  # v-1 and v-2
+    assert stats["unique_viewers_count"] == 2
     assert stats["total_watch_duration_ms"] == 60000
     assert stats["average_watch_duration_ms"] == 20000.0
     assert stats["events_by_type"]["playback_start"] == 2
     assert stats["events_by_type"]["playback_complete"] == 1
 
 
-def test_metrics_and_report_endpoints(client: TestClient):
+async def test_metrics_and_report_endpoints(client: AsyncClient):
     """Verify metrics and final summary report endpoints return expected data."""
-    run_res = client.post(
+    run_res = await client.post(
         "/api/v1/runs",
         json={"name": "Report Test", "virtual_users": 10, "duration_seconds": 30},
     )
     run_id = run_res.json()["id"]
-    client.post(f"/api/v1/runs/{run_id}/start")
+    await client.post(f"/api/v1/runs/{run_id}/start")
 
     # Ingest one event
-    client.post(
+    await client.post(
         "/api/v1/events/playback",
         json={
             "event_id": "report-evt-1",
@@ -87,17 +90,17 @@ def test_metrics_and_report_endpoints(client: TestClient):
     )
 
     # Metrics
-    metrics_res = client.get(f"/api/v1/runs/{run_id}/metrics")
+    metrics_res = await client.get(f"/api/v1/runs/{run_id}/metrics")
     assert metrics_res.status_code == 200
     metrics_data = metrics_res.json()
     assert metrics_data["run_id"] == run_id
     assert len(metrics_data["metrics"]) > 0
 
     # Stop run
-    client.post(f"/api/v1/runs/{run_id}/stop")
+    await client.post(f"/api/v1/runs/{run_id}/stop")
 
     # Report
-    report_res = client.get(f"/api/v1/runs/{run_id}/report")
+    report_res = await client.get(f"/api/v1/runs/{run_id}/report")
     assert report_res.status_code == 200
     report = report_res.json()
     assert report["run_id"] == run_id

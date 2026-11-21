@@ -1,22 +1,25 @@
-"""Tests for synthetic playback event ingestion, validation, and idempotency."""
+"""Tests for synthetic playback event ingestion, validation, and Redis atomic idempotency."""
 
 from datetime import datetime, timezone
-from fastapi.testclient import TestClient
+import pytest
+from httpx import AsyncClient
+
+pytestmark = pytest.mark.asyncio
 
 
-def _create_and_start_run(client: TestClient) -> str:
-    res = client.post(
+async def _create_and_start_run(client: AsyncClient) -> str:
+    res = await client.post(
         "/api/v1/runs",
         json={"name": "Event Ingestion Test", "virtual_users": 10, "duration_seconds": 60},
     )
     run_id = res.json()["id"]
-    client.post(f"/api/v1/runs/{run_id}/start")
+    await client.post(f"/api/v1/runs/{run_id}/start")
     return run_id
 
 
-def test_ingest_valid_playback_event(client: TestClient):
+async def test_ingest_valid_playback_event(client: AsyncClient):
     """Test submitting a valid synthetic playback event to a running simulation."""
-    run_id = _create_and_start_run(client)
+    run_id = await _create_and_start_run(client)
     payload = {
         "event_id": "evt-001",
         "run_id": run_id,
@@ -27,7 +30,7 @@ def test_ingest_valid_playback_event(client: TestClient):
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "metadata": {"device": "synthetic_client_1"},
     }
-    response = client.post("/api/v1/events/playback", json=payload)
+    response = await client.post("/api/v1/events/playback", json=payload)
     assert response.status_code == 202
     data = response.json()
     assert data["status"] == "accepted"
@@ -35,9 +38,9 @@ def test_ingest_valid_playback_event(client: TestClient):
     assert data["run_id"] == run_id
 
 
-def test_idempotency_duplicate_event_handling(client: TestClient):
+async def test_idempotency_duplicate_event_handling(client: AsyncClient):
     """Test that submitting duplicate event IDs does not increment accepted count."""
-    run_id = _create_and_start_run(client)
+    run_id = await _create_and_start_run(client)
     payload = {
         "event_id": "evt-duplicate-check",
         "run_id": run_id,
@@ -49,26 +52,26 @@ def test_idempotency_duplicate_event_handling(client: TestClient):
     }
 
     # First submission -> accepted
-    res1 = client.post("/api/v1/events/playback", json=payload)
+    res1 = await client.post("/api/v1/events/playback", json=payload)
     assert res1.status_code == 202
     assert res1.json()["status"] == "accepted"
 
     # Second submission (identical event_id) -> duplicate
-    res2 = client.post("/api/v1/events/playback", json=payload)
+    res2 = await client.post("/api/v1/events/playback", json=payload)
     assert res2.status_code == 202
     assert res2.json()["status"] == "duplicate"
 
     # Check stats: accepted should be 1, duplicate should be 1, total should be 2
-    stats_res = client.get(f"/api/v1/runs/{run_id}/stats")
+    stats_res = await client.get(f"/api/v1/runs/{run_id}/stats")
     stats = stats_res.json()
     assert stats["accepted_events"] == 1
     assert stats["duplicate_events"] == 1
     assert stats["total_events"] == 2
 
 
-def test_reject_event_for_inactive_simulation(client: TestClient):
+async def test_reject_event_for_inactive_simulation(client: AsyncClient):
     """Test that events cannot be submitted to pending or stopped simulations."""
-    res = client.post(
+    res = await client.post(
         "/api/v1/runs",
         json={"name": "Pending Run Test", "virtual_users": 5, "duration_seconds": 30},
     )
@@ -83,31 +86,30 @@ def test_reject_event_for_inactive_simulation(client: TestClient):
         "watch_duration_ms": 5000,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    response = client.post("/api/v1/events/playback", json=payload)
+    response = await client.post("/api/v1/events/playback", json=payload)
     assert response.status_code == 409
     assert "is not active" in response.json()["error"]["message"]
 
 
-def test_reject_event_with_invalid_payload(client: TestClient):
+async def test_reject_event_with_invalid_payload(client: AsyncClient):
     """Test rejection when payload is missing required fields or has invalid values."""
-    run_id = _create_and_start_run(client)
+    run_id = await _create_and_start_run(client)
 
-    # Missing viewer_id
     bad_payload = {
         "event_id": "evt-bad",
         "run_id": run_id,
         "video_id": "video-100",
         "event_type": "playback_start",
-        "watch_duration_ms": -100,  # Negative duration invalid
+        "watch_duration_ms": -100,
         "timestamp": "not-a-timestamp",
     }
-    response = client.post("/api/v1/events/playback", json=bad_payload)
+    response = await client.post("/api/v1/events/playback", json=bad_payload)
     assert response.status_code == 422
 
 
-def test_batch_event_ingestion(client: TestClient):
-    """Test batch ingestion endpoint."""
-    run_id = _create_and_start_run(client)
+async def test_batch_event_ingestion(client: AsyncClient):
+    """Test batch ingestion endpoint with Redis counters."""
+    run_id = await _create_and_start_run(client)
     now = datetime.now(timezone.utc).isoformat()
     batch = {
         "events": [
@@ -123,7 +125,7 @@ def test_batch_event_ingestion(client: TestClient):
             for i in range(1, 6)
         ]
     }
-    response = client.post("/api/v1/events/playback/batch", json=batch)
+    response = await client.post("/api/v1/events/playback/batch", json=batch)
     assert response.status_code == 202
     data = response.json()
     assert data["total"] == 5

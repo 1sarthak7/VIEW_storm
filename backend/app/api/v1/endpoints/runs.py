@@ -1,7 +1,11 @@
-"""Simulation Runs Management API Endpoints."""
+"""Simulation Runs API Endpoints with Asynchronous Database Dependency Injection."""
 
 from typing import List
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.redis import get_redis
+from app.database.session import get_db
 from app.schemas.run import SimulationRunCreate, SimulationRunResponse
 from app.services.simulation_service import simulation_service
 
@@ -14,9 +18,12 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     tags=["Simulations"],
 )
-def create_simulation_run(payload: SimulationRunCreate) -> SimulationRunResponse:
-    """Create and validate a new simulation run configuration."""
-    return simulation_service.create_run(payload)
+async def create_simulation_run(
+    payload: SimulationRunCreate,
+    db: AsyncSession = Depends(get_db),
+) -> SimulationRunResponse:
+    """Create and persist a new simulation run configuration."""
+    return await simulation_service.create_run(payload, db=db)
 
 
 @router.get(
@@ -24,9 +31,11 @@ def create_simulation_run(payload: SimulationRunCreate) -> SimulationRunResponse
     response_model=List[SimulationRunResponse],
     tags=["Simulations"],
 )
-def list_simulation_runs() -> List[SimulationRunResponse]:
-    """List historical and active simulation runs."""
-    return simulation_service.list_runs()
+async def list_simulation_runs(
+    db: AsyncSession = Depends(get_db),
+) -> List[SimulationRunResponse]:
+    """List historical and active simulation runs from PostgreSQL."""
+    return await simulation_service.list_runs(db=db)
 
 
 @router.get(
@@ -34,9 +43,12 @@ def list_simulation_runs() -> List[SimulationRunResponse]:
     response_model=SimulationRunResponse,
     tags=["Simulations"],
 )
-def get_simulation_run(run_id: str) -> SimulationRunResponse:
+async def get_simulation_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> SimulationRunResponse:
     """Retrieve details for a specific simulation run."""
-    return simulation_service.get_run(run_id)
+    return await simulation_service.get_run(run_id, db=db)
 
 
 @router.post(
@@ -44,9 +56,13 @@ def get_simulation_run(run_id: str) -> SimulationRunResponse:
     response_model=SimulationRunResponse,
     tags=["Simulations"],
 )
-def start_simulation_run(run_id: str) -> SimulationRunResponse:
-    """Start an authorized simulation run."""
-    return simulation_service.start_run(run_id)
+async def start_simulation_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> SimulationRunResponse:
+    """Start an authorized simulation run and initialize Redis counters."""
+    return await simulation_service.start_run(run_id, db=db, redis=redis)
 
 
 @router.post(
@@ -54,6 +70,10 @@ def start_simulation_run(run_id: str) -> SimulationRunResponse:
     response_model=SimulationRunResponse,
     tags=["Simulations"],
 )
-def stop_simulation_run(run_id: str) -> SimulationRunResponse:
-    """Safely stop an active simulation run."""
-    return simulation_service.stop_run(run_id)
+async def stop_simulation_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> SimulationRunResponse:
+    """Safely stop an active simulation run and flush summaries to PostgreSQL."""
+    return await simulation_service.stop_run(run_id, db=db, redis=redis)
