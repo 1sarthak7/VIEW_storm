@@ -45,10 +45,15 @@ class StatsService:
         viewers_key = run_viewers_key(run_id)
         timestamps_key = run_timestamps_key(run_id)
 
-        stats_data = await r.hgetall(stats_key)
-        events_by_type_raw = await r.hgetall(types_key)
-        unique_viewers = await r.scard(viewers_key)
-        recent_timestamps_raw = await r.lrange(timestamps_key, 0, 200)
+        # Batch execute multiple Redis queries via single pipelined round-trip
+        async with r.pipeline(transaction=False) as pipe:
+            pipe.hgetall(stats_key)
+            pipe.hgetall(types_key)
+            pipe.scard(viewers_key)
+            pipe.lrange(timestamps_key, 0, 200)
+            stats_data, events_by_type_raw, unique_viewers, recent_timestamps_raw = (
+                await pipe.execute()
+            )
 
         total_submissions = int(stats_data.get("total_submissions", 0))
         accepted = int(stats_data.get("accepted_events", 0))

@@ -4,8 +4,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.deps import require_viewer
 from app.database.redis import get_redis
 from app.database.session import get_db
+from app.models.user import User
 from app.schemas.worker import (
     WorkerAssignmentAcknowledgeRequest,
     WorkerAssignmentResponse,
@@ -55,6 +57,7 @@ async def record_worker_heartbeat(
 async def list_worker_nodes(
     status: Optional[str] = Query(None, description="Filter by status (e.g. online, busy, stale)"),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_viewer),
 ) -> List[WorkerNodeResponse]:
     """List registered load generator nodes."""
     return await worker_registry_service.list_active_nodes(status=status, db=db)
@@ -79,6 +82,7 @@ async def get_worker_assignment(
 async def get_worker_node(
     worker_id: str,
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_viewer),
 ) -> WorkerNodeResponse:
     """Retrieve details for a specific registered worker node."""
     from fastapi import HTTPException

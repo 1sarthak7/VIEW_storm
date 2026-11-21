@@ -64,6 +64,74 @@ class ExceededUserLimitError(ViewStormException):
         )
 
 
+class AuthenticationError(ViewStormException):
+    """Raised when authentication credentials cannot be validated."""
+    def __init__(self, message: str = "Could not validate authentication credentials."):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+class InsufficientPermissionsError(ViewStormException):
+    """Raised when a user lacks required role permissions for an operation."""
+    def __init__(self, required_roles: list, user_role: str):
+        super().__init__(
+            message=f"Access denied. User role '{user_role}' lacks required permissions ({required_roles}).",
+            status_code=status.HTTP_403_FORBIDDEN,
+            details={"required_roles": required_roles, "user_role": user_role}
+        )
+
+
+class AuthenticationRateLimitError(ViewStormException):
+    """Raised when authentication attempt rate limit is exceeded."""
+    def __init__(self, message: str = "Too many failed login attempts. Please wait 5 minutes."):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+
+class UserNotFoundError(ViewStormException):
+    """Raised when a user is not found."""
+    def __init__(self, identifier: str):
+        super().__init__(
+            message=f"User '{identifier}' not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"identifier": identifier}
+        )
+
+
+class UserAlreadyExistsError(ViewStormException):
+    """Raised when attempting to create a user that already exists."""
+    def __init__(self, field: str, value: str):
+        super().__init__(
+            message=f"User with {field} '{value}' already exists.",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"field": field, "value": value}
+        )
+
+
+class EmergencyStopActiveError(ViewStormException):
+    """Raised when an operation is rejected because emergency stop is active."""
+    def __init__(self, reason: str = "Emergency stop is currently engaged."):
+        super().__init__(
+            message=f"Emergency stop is active: {reason}. All simulation commands are locked.",
+            status_code=status.HTTP_423_LOCKED,
+            details={"reason": reason}
+        )
+
+
+class BenchmarkProfileNotFoundError(ViewStormException):
+    """Raised when a requested benchmark profile does not exist."""
+    def __init__(self, profile_name: str):
+        super().__init__(
+            message=f"Benchmark profile '{profile_name}' not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"profile_name": profile_name}
+        )
+
+
 async def viewstorm_exception_handler(request: Request, exc: ViewStormException) -> JSONResponse:
     """Handle custom ViewStorm domain exceptions."""
     return JSONResponse(

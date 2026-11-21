@@ -46,5 +46,24 @@ class Settings(BaseSettings):
     stats_retention_ttl_seconds: int = 604800   # 7 days
     metrics_retention_points: int = 300
 
+    # Security & RBAC Configuration
+    secret_key: str = Field(
+        default="viewstorm-prod-secret-key-hardening-2026-super-secure",
+        alias="SECRET_KEY",
+    )
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 1440  # 24 hours
+    auth_enabled: bool = Field(default=True, alias="AUTH_ENABLED")
+    admin_username: str = Field(default="admin", alias="VIEWSTORM_ADMIN_USERNAME")
+    admin_password: str = Field(default="ViewStormAdmin2026!", alias="VIEWSTORM_ADMIN_PASSWORD")
+    admin_email: str = Field(default="admin@viewstorm.local", alias="VIEWSTORM_ADMIN_EMAIL")
+    login_rate_limit_max_attempts: int = 5
+    login_rate_limit_window_seconds: int = 300
+
+    # Emergency Stop Keys
+    emergency_stop_key: str = "viewstorm:emergency_stop:active"
+    emergency_stop_reason_key: str = "viewstorm:emergency_stop:reason"
+    emergency_stop_meta_key: str = "viewstorm:emergency_stop:meta"
+
 
 settings = Settings()

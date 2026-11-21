@@ -28,3 +28,14 @@ async def test_v1_health_endpoint(client: AsyncClient):
     assert data["status"] == "healthy"
     assert data["redis_status"] == "healthy"
     assert data["database_status"] == "healthy"
+
+
+async def test_prometheus_metrics_exposition(client: AsyncClient):
+    """Verify GET /metrics exports Prometheus formatted metrics."""
+    response = await client.get("/metrics")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    content = response.text
+    assert "viewstorm_http_requests_total" in content
+    assert "viewstorm_active_simulations" in content
+    assert "viewstorm_emergency_stop_active" in content

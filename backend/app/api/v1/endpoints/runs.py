@@ -4,12 +4,16 @@ from typing import List
 from fastapi import APIRouter, Depends, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.deps import require_operator, require_viewer
+from app.core.errors import EmergencyStopActiveError
 from app.core.runner_config import runner_settings
 from app.database.redis import get_redis
 from app.database.session import get_db
+from app.models.user import User
 from app.schemas.run import SimulationRunCreate, SimulationRunResponse
 from app.schemas.worker import SimulationWorkerResponse
 from app.services.distributed_runner_service import distributed_runner_service
+from app.services.emergency_service import emergency_service
 from app.services.locust_runner_service import locust_runner_service
 from app.services.simulation_service import simulation_service
 from app.services.worker_assignment_service import worker_assignment_service
@@ -26,8 +30,13 @@ router = APIRouter()
 async def create_simulation_run(
     payload: SimulationRunCreate,
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_operator),
 ) -> SimulationRunResponse:
     """Create and persist a new simulation run configuration."""
+    is_halted, meta = await emergency_service.is_active()
+    if is_halted:
+        reason = meta.get("reason", "Emergency stop engaged") if meta else "Emergency stop engaged"
+        raise EmergencyStopActiveError(reason)
     return await simulation_service.create_run(payload, db=db)
 
 
@@ -38,6 +47,7 @@ async def create_simulation_run(
 )
 async def list_simulation_runs(
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_viewer),
 ) -> List[SimulationRunResponse]:
     """List historical and active simulation runs from PostgreSQL."""
     return await simulation_service.list_runs(db=db)
@@ -51,6 +61,7 @@ async def list_simulation_runs(
 async def get_simulation_run(
     run_id: str,
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_viewer),
 ) -> SimulationRunResponse:
     """Retrieve details for a specific simulation run."""
     return await simulation_service.get_run(run_id, db=db)
@@ -64,6 +75,7 @@ async def get_simulation_run(
 async def get_simulation_run_workers(
     run_id: str,
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_viewer),
 ) -> List[SimulationWorkerResponse]:
     """Retrieve worker allocations for a simulation run."""
     from app.repositories.worker_repository import WorkerRepository
@@ -98,8 +110,14 @@ async def start_simulation_run(
     run_id: str,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
+    _: User = Depends(require_operator),
 ) -> SimulationRunResponse:
     """Start an authorized simulation run and launch the Locust runner subprocess or distributed master."""
+    is_halted, meta = await emergency_service.is_active()
+    if is_halted:
+        reason = meta.get("reason", "Emergency stop engaged") if meta else "Emergency stop engaged"
+        raise EmergencyStopActiveError(reason)
+
     started_run = await simulation_service.start_run(run_id, db=db, redis=redis)
     try:
         if started_run.execution_mode == "distributed":
@@ -131,6 +149,7 @@ async def stop_simulation_run(
     run_id: str,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
+    _: User = Depends(require_operator),
 ) -> SimulationRunResponse:
     """Safely stop an active simulation run and terminate the Locust runner subprocess or distributed master."""
     run = await simulation_service.get_run(run_id, db=db)

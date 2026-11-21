@@ -13,6 +13,12 @@ export async function request<T>(
     headers.set('Content-Type', 'application/json');
   }
 
+  // Inject operator Bearer token if available in storage
+  const token = localStorage.getItem('viewstorm_auth_token');
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
 
