@@ -1,4 +1,4 @@
-"""Simulation Run Database Entity."""
+"""Simulation Run Database Entity with Execution Mode."""
 
 from datetime import datetime
 from typing import List, Optional
@@ -15,6 +15,7 @@ class SimulationRun(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     target_environment: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="local")
     virtual_users: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     spawn_rate: Mapped[float] = mapped_column(Float, nullable=False, default=10.0)
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60)

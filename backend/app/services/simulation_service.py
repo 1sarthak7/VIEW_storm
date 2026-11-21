@@ -27,6 +27,7 @@ class SimulationService:
             id=entity.id,
             name=entity.name,
             target_environment=entity.target_environment,
+            execution_mode=getattr(entity, "execution_mode", "local") or "local",
             virtual_users=entity.virtual_users,
             spawn_rate=entity.spawn_rate,
             duration_seconds=entity.duration_seconds,
@@ -53,7 +54,7 @@ class SimulationService:
             )
 
         if (
-            payload.target_environment == "local"
+            payload.execution_mode == "local"
             and payload.virtual_users > settings.max_local_virtual_users
         ):
             raise ExceededUserLimitError(

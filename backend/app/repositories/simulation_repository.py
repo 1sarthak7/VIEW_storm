@@ -22,6 +22,7 @@ class SimulationRepository:
             id=run_id,
             name=payload.name,
             target_environment=payload.target_environment,
+            execution_mode=getattr(payload, "execution_mode", "local"),
             virtual_users=payload.virtual_users,
             spawn_rate=payload.spawn_rate,
             duration_seconds=payload.duration_seconds,

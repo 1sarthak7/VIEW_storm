@@ -38,6 +38,55 @@ services:
     networks:
       - viewstorm_network
 
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: viewstorm-backend
+    restart: unless-stopped
+    environment:
+      - APP_ENV=local
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://viewstorm:viewstorm_password@postgres:5432/viewstorm
+      - VIEWSTORM_TARGET_LOCAL_URL=http://backend:8000
+      - VIEWSTORM_MASTER_BIND_HOST=0.0.0.0
+      - VIEWSTORM_MASTER_BIND_PORT=5557
+      - VIEWSTORM_MASTER_ADVERTISE_HOST=backend
+    ports:
+      - "8000:8000"
+      - "5557:5557"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - viewstorm_network
+
+  worker-agent-1:
+    build:
+      context: ..
+      dockerfile: worker-agent/Dockerfile
+    container_name: viewstorm-worker-1
+    restart: unless-stopped
+    command: ["--server-url", "http://backend:8000", "--name", "docker-worker-01", "--capacity", "250", "--locustfile", "simulator/locustfile.py"]
+    depends_on:
+      - backend
+    networks:
+      - viewstorm_network
+
+  worker-agent-2:
+    build:
+      context: ..
+      dockerfile: worker-agent/Dockerfile
+    container_name: viewstorm-worker-2
+    restart: unless-stopped
+    command: ["--server-url", "http://backend:8000", "--name", "docker-worker-02", "--capacity", "250", "--locustfile", "simulator/locustfile.py"]
+    depends_on:
+      - backend
+    networks:
+      - viewstorm_network
+
 volumes:
   postgres_data:
     driver: local

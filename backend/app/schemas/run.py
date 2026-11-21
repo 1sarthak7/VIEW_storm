@@ -9,10 +9,15 @@ from pydantic import BaseModel, Field, model_validator
 class SimulationStatus(str, Enum):
     """Simulation run lifecycle states."""
     PENDING = "pending"
+    STARTING = "starting"
+    WAITING_FOR_WORKERS = "waiting_for_workers"
     RUNNING = "running"
+    DEGRADED = "degraded"
+    STOPPING = "stopping"
     STOPPED = "stopped"
     COMPLETED = "completed"
     FAILED = "failed"
+    INTERRUPTED = "interrupted"
 
 
 class SimulationRunCreate(BaseModel):
@@ -27,11 +32,15 @@ class SimulationRunCreate(BaseModel):
         default="local",
         description="Target environment name (must be allowlisted)"
     )
+    execution_mode: str = Field(
+        default="local",
+        description="Execution mode: 'local' (standalone) or 'distributed' (master-worker)"
+    )
     virtual_users: int = Field(
         default=100,
         ge=1,
-        le=1000,
-        description="Target number of concurrent virtual users (max 1000 for local mode)"
+        le=200000,
+        description="Target number of concurrent virtual users"
     )
     spawn_rate: float = Field(
         default=10.0,
@@ -74,6 +83,7 @@ class SimulationRunResponse(BaseModel):
     id: str
     name: str
     target_environment: str
+    execution_mode: str = "local"
     virtual_users: int
     spawn_rate: float
     duration_seconds: int
