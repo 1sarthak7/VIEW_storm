@@ -1,0 +1,12 @@
+# ViewStorm gitignore
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.env
+node_modules/
+dist/
+build/
+*.log
+.DS_Store
